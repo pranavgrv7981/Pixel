@@ -1,0 +1,24 @@
+# Local AI Personal Assistant Dependencies
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.1
+pytest>=8.0.0
+# Phase 1: Ollama integration
+ollama>=0.4.0
+# Phase 9: Personal Knowledge / RAG
+pypdf>=5.0.0
+numpy>=2.0.0
+# Phase 10: Browser Automation
+playwright>=1.40.0
+# Phase 11: Dedicated Desktop Application
+PySide6>=6.10.0
+# Phase 12: Local Voice Input / Speech-to-Text
+sounddevice>=0.5.0
+faster-whisper>=1.0.0
+# Phase 13: Local Text-to-Speech
+pyttsx3>=2.90
+piper-tts>=1.7.0
+
+
+
+
