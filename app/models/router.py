@@ -176,7 +176,28 @@ class ModelRouter:
         if not self.settings.model_fallback_enabled:
             raise ModelNotFoundError(f"Preferred model '{missing_target}' for {desired_role.value} is not installed.")
 
-        # Fallback Priority Matrix
+        # 1. Check other registered profiles for the exact requested role first
+        for same_role_prof in self.registry.list_by_role(desired_role):
+            if same_role_prof.name.lower() != missing_target.lower():
+                if self.availability_checker._model_matches(same_role_prof.name, installed_models):
+                    logger.info(
+                        "Model fallback: '%s' (%s) not installed -> using alternative %s model '%s'",
+                        missing_target,
+                        desired_role.value,
+                        desired_role.value,
+                        same_role_prof.name,
+                    )
+                    return RoutingDecision(
+                        selected_model=same_role_prof.name,
+                        role=desired_role,
+                        category=category,
+                        reason=f"Preferred '{missing_target}' not installed. Using alternative {desired_role.value} model '{same_role_prof.name}'.",
+                        fallback_model=missing_target,
+                        is_fallback=True,
+                        context_bytes=context_bytes,
+                    )
+
+        # Fallback Priority Matrix across different roles
         fallback_order: list[ModelRole] = []
         if desired_role == ModelRole.FAST:
             fallback_order = [ModelRole.STANDARD, ModelRole.HEAVY]

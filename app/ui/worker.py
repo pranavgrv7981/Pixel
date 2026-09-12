@@ -96,15 +96,25 @@ class AgentWorker(QThread):
             role_val = getattr(getattr(decision, "role", None), "value", "standard")
             is_fb = getattr(decision, "is_fallback", False)
 
+            # Determine execution tier
+            is_fastpath = getattr(getattr(self.agent, "last_intent", None), "action_type", None) == "fast_path" or chunks_count <= 1 and total_duration < 0.05
+            tier_label = "DIRECT" if is_fastpath else (role_val.upper() if role_val else "FAST_MODEL")
+
             metrics = TurnMetrics(
                 ttft=ttft,
                 total_time=total_duration,
                 chunks_count=chunks_count,
                 chars_count=len(full_text),
                 tokens_per_second=tokens_per_sec,
-                model_name=model_name,
-                role=role_val,
+                model_name=model_name if not is_fastpath else "pixel-fast-path",
+                role=role_val if not is_fastpath else "direct",
                 is_fallback=is_fb,
+                tier=tier_label,
+                ttft_ms=ttft * 1000 if ttft is not None else None,
+                t_generation_ms=gen_duration * 1000,
+                t_total_ms=total_duration * 1000,
+                input_tokens=max(1, len(self.prompt) // 4),
+                output_tokens=max(1, len(full_text) // 4),
             )
 
             self.metrics_ready.emit(metrics)

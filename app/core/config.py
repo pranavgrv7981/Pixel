@@ -418,7 +418,7 @@ class Settings(BaseSettings):
         description="Warm up model into memory on startup",
     )
     ollama_keep_alive: Optional[str] = Field(
-        default="15m",
+        default=None,
         validation_alias=AliasChoices("OLLAMA_KEEP_ALIVE"),
         description="Duration to keep model in Ollama VRAM (e.g. '5m', '15m', '-1')",
     )
@@ -584,10 +584,40 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MODEL_ROUTING_MODE"),
         description="Routing mode: 'auto', 'fast', 'standard', 'heavy', or specific model name",
     )
+    enable_fast_path: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("ENABLE_FAST_PATH"),
+        description="Master switch for deterministic fast path bypass (<15ms)",
+    )
     fast_model: str = Field(
-        default="qwen2.5:0.5b",
+        default="qwen3:4b",
         validation_alias=AliasChoices("FAST_MODEL"),
         description="Configured fast/lightweight model for simple chat and direct tasks",
+    )
+    fast_chat_think: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("FAST_CHAT_THINK"),
+        description="Whether thinking tags are enabled for fast conversational turns",
+    )
+    fast_num_ctx: int = Field(
+        default=2048,
+        validation_alias=AliasChoices("FAST_NUM_CTX"),
+        description="Context token budget for fast conversational turns",
+    )
+    fast_num_predict: int = Field(
+        default=384,
+        validation_alias=AliasChoices("FAST_NUM_PREDICT"),
+        description="Max token generation limit for fast conversational turns",
+    )
+    fast_temperature: float = Field(
+        default=0.4,
+        validation_alias=AliasChoices("FAST_TEMPERATURE"),
+        description="Sampling temperature for fast conversational turns",
+    )
+    fast_keep_alive: str = Field(
+        default="30m",
+        validation_alias=AliasChoices("FAST_KEEP_ALIVE"),
+        description="Residency keep-alive duration for fast conversational model",
     )
     standard_model: str = Field(
         default="qwen3:8b",

@@ -156,6 +156,25 @@ class ModelRegistry:
         self._profiles[heavy.name.lower()] = heavy
         self._profiles[vision.name.lower()] = vision
 
+        # Register standard known small model profile if not overridden
+        if "qwen2.5:0.5b" not in self._profiles:
+            tiny_fallback = ModelProfile(
+                name="qwen2.5:0.5b",
+                size_class=ModelSizeClass.TINY,
+                role=ModelRole.FAST,
+                capabilities=ModelCapabilities(
+                    tool_calling=True,
+                    json_mode=True,
+                    reasoning_level=ReasoningLevel.BASIC,
+                    context_length=8192,
+                ),
+                preferred_for=["greetings", "simple_chat"],
+                is_default=False,
+                description="Ultra-fast fallback lightweight model.",
+                estimated_ram_mb=512,
+            )
+            self._profiles["qwen2.5:0.5b"] = tiny_fallback
+
     def list_vision_models(self) -> list[ModelProfile]:
         """Return all registered model profiles supporting multimodal vision."""
         return [p for p in self._profiles.values() if p.capabilities.vision or p.role == ModelRole.VISION]

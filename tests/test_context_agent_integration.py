@@ -30,6 +30,7 @@ def agent_with_context(tmp_path: Path, mock_client: MagicMock) -> Agent:
     settings = Settings(
         context_management_enabled=True,
         default_model="qwen3:30b",
+        enable_fast_path=False,
     )
     ctx_mgr = ContextManager(db=db, settings=settings)
     return Agent(

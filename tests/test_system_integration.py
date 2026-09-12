@@ -26,7 +26,7 @@ from app.tools.system import (
 
 @pytest.fixture
 def agent_system_env() -> tuple[Agent, MagicMock, MagicMock, MagicMock]:
-    settings = Settings()
+    settings = Settings(enable_fast_path=False)
     mock_sys_provider = MagicMock(spec=SystemProvider)
     mock_sys_provider.get_memory_usage.return_value = {
         "usage_percent": 45.0,

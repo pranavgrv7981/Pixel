@@ -41,6 +41,16 @@ class TurnMetrics(BaseModel):
     model_name: str = Field(default="", description="Name of the model that generated the response")
     role: str = Field(default="", description="Model tier/role (e.g. fast, standard, heavy)")
     is_fallback: bool = Field(default=False, description="Whether fallback model routing occurred")
+    tier: str = Field(default="FAST_MODEL", description="DIRECT, FAST_MODEL, STANDARD, or HEAVY")
+    t_router_ms: float = Field(default=0.0, description="Intent routing latency in ms")
+    t_fastpath_ms: float = Field(default=0.0, description="Direct fast path execution latency in ms")
+    t_context_ms: float = Field(default=0.0, description="Context assembly latency in ms")
+    t_model_selection_ms: float = Field(default=0.0, description="Model selection and routing latency in ms")
+    ttft_ms: Optional[float] = Field(default=None, description="Time to first token in ms")
+    t_generation_ms: float = Field(default=0.0, description="Active token generation latency in ms")
+    t_total_ms: float = Field(default=0.0, description="Total roundtrip turn latency in ms")
+    input_tokens: int = Field(default=0, description="Estimated input tokens")
+    output_tokens: int = Field(default=0, description="Estimated output tokens")
 
 
 class ToolEvent(BaseModel):

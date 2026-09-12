@@ -60,3 +60,23 @@ class ModelProfile(BaseModel):
     is_default: bool = Field(default=False, description="Whether this is the fallback default for its role")
     description: Optional[str] = None
     estimated_ram_mb: int = Field(default=4096, description="Estimated RAM consumption in megabytes")
+
+
+class FastChatProfile(BaseModel):
+    """Centralized configuration profile for fast ordinary conversational turns."""
+
+    model: str = Field(default="qwen3:4b", description="Default fast model tag")
+    think: bool = Field(default=False, description="Whether internal thinking/reasoning tags are enabled")
+    num_ctx: int = Field(default=2048, description="Target fast context window token length")
+    num_predict: int = Field(default=384, description="Maximum tokens generated per turn")
+    temperature: float = Field(default=0.4, description="Sampling temperature for fast answers")
+    keep_alive: str = Field(default="30m", description="Ollama residency duration")
+
+    def to_ollama_options(self) -> dict[str, Any]:
+        """Convert profile into Ollama API options payload."""
+        return {
+            "num_ctx": self.num_ctx,
+            "num_predict": self.num_predict,
+            "temperature": self.temperature,
+        }
+

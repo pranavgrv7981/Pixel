@@ -5,6 +5,7 @@ import pytest
 
 from app.agent.agent import Agent
 from app.agent.conversation import Conversation, Role
+from app.core.config import Settings
 from app.core.exceptions import InvalidMessageError, ToolRoundLimitError
 from app.core.ollama_client import ModelResponse, OllamaClient
 from app.tools.demo import GetCurrentTimeTool, SafeCalculateTool
@@ -55,7 +56,7 @@ def test_agent_run_single_tool_call(mock_client: MagicMock, tool_registry: ToolR
     mock_client.chat.side_effect = [tool_call_response, final_response]
 
     conv = Conversation()
-    agent = Agent(conversation=conv, client=mock_client, registry=tool_registry)
+    agent = Agent(conversation=conv, client=mock_client, registry=tool_registry, settings=Settings(enable_fast_path=False))
 
     reply = agent.run("What is today's date?")
     assert reply == "Today's date is 2026-08-30."
@@ -143,7 +144,7 @@ def test_agent_stream_run_with_tool(mock_client: MagicMock, tool_registry: ToolR
     mock_client.chat.side_effect = [round1, round2]
 
     conv = Conversation()
-    agent = Agent(conversation=conv, client=mock_client, registry=tool_registry)
+    agent = Agent(conversation=conv, client=mock_client, registry=tool_registry, settings=Settings(enable_fast_path=False))
 
     stream = agent.stream_run("Calculate 2 + 2")
     output = "".join(list(stream))

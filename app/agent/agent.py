@@ -15,6 +15,7 @@ from app.agent.recovery import FailureRecoveryManager
 from app.agent.telemetry import AgentQualityTracker
 from app.agent.tool_selector import CapabilityToolSelector
 from app.agent.verifier import ActionVerifier
+from app.agent.fast_path import FastPathEngine
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     InvalidMessageError,
@@ -23,6 +24,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import get_logger
 from app.core.ollama_client import ModelResponse, OllamaClient
+from app.models.profiles import ModelRole
 from app.models.selector import RequestCategory
 from app.security.manager import PermissionManager
 from app.security.permissions import ExecutionContext
@@ -71,6 +73,11 @@ class Agent:
         self.metrics_tracker = metrics_tracker
         self.last_routing_decision: Optional[Any] = None
         self.last_intent: Optional[RequestIntent] = None
+        self.fast_path: FastPathEngine = FastPathEngine(
+            registry=self.registry,
+            memory_manager=self.memory_manager,
+            permission_manager=self.permission_manager,
+        )
 
         # Phase 18 Intelligence Subsystems
         self.intent_analyzer: IntentAnalyzer = intent_analyzer or IntentAnalyzer()
@@ -180,6 +187,29 @@ class Agent:
 
         self.recovery_manager.clear_history()
         self.conversation.add_user_message(prompt)
+
+        # 0. FAST PATH: Deterministic Execution Bypass
+        if not images and self.fast_path and getattr(self.settings, "enable_fast_path", True):
+            fast_res = self.fast_path.try_execute(prompt)
+            if fast_res is not None:
+                self.conversation.add_assistant_message(fast_res)
+                latency = time.perf_counter() - start_time
+                self.telemetry.record(
+                    AgentTelemetryRecord(
+                        interaction_id=interaction_id,
+                        intent_category="fast_path",
+                        action_type="fast_path",
+                        model_name="pixel-fast-path",
+                        tool_count=0,
+                        retries_count=0,
+                        success=True,
+                        goal_achieved=True,
+                        latency_seconds=latency,
+                        false_completion_prevented=False,
+                    )
+                )
+                logger.info("FastPath executed for prompt '%s' in %.2fms", prompt[:40], latency * 1000)
+                return fast_res
 
         # 1. UNDERSTAND & CLASSIFY INTENT
         intent = self.intent_analyzer.analyze(prompt)
@@ -417,6 +447,30 @@ class Agent:
         self.recovery_manager.clear_history()
         self.conversation.add_user_message(prompt)
 
+        # 0. FAST PATH: Deterministic Execution Bypass
+        if not images and self.fast_path and getattr(self.settings, "enable_fast_path", True):
+            fast_res = self.fast_path.try_execute(prompt)
+            if fast_res is not None:
+                self.conversation.add_assistant_message(fast_res)
+                latency = time.perf_counter() - start_time
+                self.telemetry.record(
+                    AgentTelemetryRecord(
+                        interaction_id=interaction_id,
+                        intent_category="fast_path",
+                        action_type="fast_path",
+                        model_name="pixel-fast-path",
+                        tool_count=0,
+                        retries_count=0,
+                        success=True,
+                        goal_achieved=True,
+                        latency_seconds=latency,
+                        false_completion_prevented=False,
+                    )
+                )
+                logger.info("FastPath executed for prompt '%s' in %.2fms", prompt[:40], latency * 1000)
+                yield fast_res
+                return
+
         # 1. UNDERSTAND & CLASSIFY INTENT
         intent = self.intent_analyzer.analyze(prompt)
         self.last_intent = intent
@@ -513,8 +567,12 @@ class Agent:
             # Stream directly token-by-token from Ollama for lowest TTFT
             if tools_schema is None or intent.action_type == ActionType.ANSWER:
                 accumulated_tokens: list[str] = []
+                is_fast_role = (routing_decision and routing_decision.role == ModelRole.FAST) or intent.action_type == ActionType.ANSWER
+                fast_options = {"num_ctx": 2048, "num_predict": 256, "temperature": 0.3} if is_fast_role else None
+                use_think = False if is_fast_role else True
+
                 try:
-                    for token in self.client.stream_chat(payload, model=target_model):
+                    for token in self.client.stream_chat(payload, model=target_model, options=fast_options, think=use_think):
                         accumulated_tokens.append(str(token))
                         yield str(token)
                 except Exception as stream_err:

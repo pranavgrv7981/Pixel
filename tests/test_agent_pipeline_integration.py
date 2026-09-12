@@ -28,6 +28,7 @@ def agent(tmp_path: Path, mock_client: MagicMock) -> Agent:
         quality_checks_enabled=True,
         quality_telemetry_enabled=True,
         default_model="qwen3:30b",
+        enable_fast_path=False,
     )
     registry = ToolRegistry()
     registry.register(SafeCalculateTool())

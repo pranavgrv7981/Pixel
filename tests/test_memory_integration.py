@@ -23,7 +23,7 @@ from app.tools.registry import ToolRegistry
 @pytest.fixture
 def memory_agent_env(tmp_path: Path) -> tuple[Agent, MemoryManager, MagicMock, MagicMock, Path]:
     db_file = tmp_path / "test_persist.db"
-    settings = Settings(memory_database_path=str(db_file))
+    settings = Settings(memory_database_path=str(db_file), enable_fast_path=False)
     mgr = MemoryManager(settings=settings)
     mgr.initialize()
 
@@ -146,7 +146,7 @@ def test_persistence_across_simulated_restart(
 
     # --- SIMULATE APPLICATION RESTART ---
     # Session 2: completely new instances connecting to the same SQLite db_file
-    settings_s2 = Settings(memory_database_path=str(db_file))
+    settings_s2 = Settings(memory_database_path=str(db_file), enable_fast_path=False)
     mgr_s2 = MemoryManager(settings=settings_s2)
     mgr_s2.initialize()
 
