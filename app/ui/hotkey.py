@@ -121,6 +121,9 @@ class GlobalHotkeyManager(QObject):
 
         # Register hotkey on this thread's message queue (hWnd = None)
         res = user32.RegisterHotKey(None, self._hotkey_id, mods, vk)
+        if not res and (mods & MOD_NOREPEAT):
+            res = user32.RegisterHotKey(None, self._hotkey_id, mods & ~MOD_NOREPEAT, vk)
+
         success_holder[0] = bool(res)
         init_event.set()
 

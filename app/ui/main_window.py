@@ -118,22 +118,62 @@ class MainWindow(QMainWindow):
 
     def summon_pixel(self, source: str = "hotkey") -> None:
         """Instantly restore, raise, and focus Pixel main window upon global hotkey or voice wake."""
+        import sys
+        from PySide6.QtCore import QThread
+
+        # Ensure execution occurs on the main GUI Qt thread
+        if QThread.currentThread() != self.thread():
+            QTimer.singleShot(0, lambda: self.summon_pixel(source))
+            return
+
         self.ensure_visible_on_screen()
+
+        # 1. Qt Window State Restoration
+        self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive)
         self.show()
         self.showNormal()
         self.raise_()
         self.activateWindow()
 
+        # 2. Windows Win32 Direct Foreground Elevation (Bypasses Windows Foreground Lockout)
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                hwnd = int(self.winId())
+                user32 = ctypes.windll.user32
+                kernel32 = ctypes.windll.kernel32
+
+                # SW_RESTORE = 9
+                user32.ShowWindow(hwnd, 9)
+
+                current_thread = kernel32.GetCurrentThreadId()
+                fg_hwnd = user32.GetForegroundWindow()
+                fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None)
+
+                if fg_thread != 0 and fg_thread != current_thread:
+                    user32.AttachThreadInput(fg_thread, current_thread, True)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.BringWindowToTop(hwnd)
+                    user32.AttachThreadInput(fg_thread, current_thread, False)
+                else:
+                    user32.SetForegroundWindow(hwnd)
+                    user32.BringWindowToTop(hwnd)
+            except Exception:
+                pass
+
+        # 3. Focus prompt text editor
         if hasattr(self, "input_bar") and hasattr(self.input_bar, "text_input"):
-            self.input_bar.text_input.setFocus()
+            self.input_bar.text_input.setFocus(Qt.OtherFocusReason)
             cursor = self.input_bar.text_input.textCursor()
             cursor.movePosition(QTextCursor.End)
             self.input_bar.text_input.setTextCursor(cursor)
 
+        # 4. Living Core Awakening State Pulse
         if hasattr(self, "chat_view") and hasattr(self.chat_view, "set_core_state"):
             self.chat_view.set_core_state(PixelCoreState.AWAKENING)
             QTimer.singleShot(600, lambda: self.chat_view.set_core_state(PixelCoreState.IDLE))
 
+        # 5. Voice acknowledgment if summoned by voice
         if source == "voice" and self.tts_controller and getattr(self.controller.settings, "voice_wake_feedback", True):
             self.tts_controller.speak_text("Ready.", interrupt_current=True)
 
