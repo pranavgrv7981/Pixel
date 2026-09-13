@@ -24,7 +24,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import get_logger
 from app.core.ollama_client import ModelResponse, OllamaClient
-from app.models.profiles import ModelRole
+from app.models.profiles import FastChatProfile, ModelRole
 from app.models.selector import RequestCategory
 from app.security.manager import PermissionManager
 from app.security.permissions import ExecutionContext
@@ -565,10 +565,10 @@ class Agent:
 
             # Optimization for direct answers with no tools:
             # Stream directly token-by-token from Ollama for lowest TTFT
-            if tools_schema is None or intent.action_type == ActionType.ANSWER:
+            if not tools_schema or intent.action_type == ActionType.ANSWER:
                 accumulated_tokens: list[str] = []
                 is_fast_role = (routing_decision and routing_decision.role == ModelRole.FAST) or intent.action_type == ActionType.ANSWER
-                fast_options = {"num_ctx": 2048, "num_predict": 256, "temperature": 0.3} if is_fast_role else None
+                fast_options = FastChatProfile(model=target_model or self.settings.fast_model).to_ollama_options() if is_fast_role else None
                 use_think = False if is_fast_role else True
 
                 try:

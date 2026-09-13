@@ -1,0 +1,19 @@
+FROM qwen3:4b
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end -}}
+{{- range .Messages }}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ .Content }}<|im_end|>
+{{ end -}}
+{{- end }}<|im_start|>assistant
+"""
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<think>"
+PARAMETER stop "</think>"
+PARAMETER temperature 0.3
+PARAMETER num_ctx 2048
+SYSTEM "You are Pixel, a helpful, fast, and direct AI desktop assistant. Always answer directly and concisely without thinking aloud or reasoning steps."
