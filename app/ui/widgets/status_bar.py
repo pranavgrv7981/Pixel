@@ -15,7 +15,7 @@ from app.ui.theme import (
     COLOR_ACCENT,
     COLOR_BG_PANEL,
     COLOR_BG_SURFACE,
-    COLOR_BORDER,
+    COLOR_BORDER_SOLID,
     COLOR_DANGER,
     COLOR_PURPLE,
     COLOR_SUCCESS,
@@ -27,7 +27,7 @@ from app.ui.theme import (
 
 
 class SystemStatusBar(QWidget):
-    """Bottom HUD status bar displaying live backend connectivity, execution tier, tools, and audio states."""
+    """Bottom status bar displaying live backend connectivity, execution tier, tools, and audio states."""
 
     model_changed = Signal(str)
     refresh_requested = Signal()
@@ -36,9 +36,9 @@ class SystemStatusBar(QWidget):
         super().__init__(parent)
         self.setFixedHeight(34)
         self.setStyleSheet(f"""
-            QWidget {{
+            SystemStatusBar {{
                 background-color: {COLOR_BG_PANEL};
-                border-top: 1px solid {COLOR_BORDER};
+                border-top: 1px solid {COLOR_BORDER_SOLID};
                 font-size: 11px;
                 font-family: Consolas, "Segoe UI", sans-serif;
             }}

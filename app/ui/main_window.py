@@ -1,4 +1,4 @@
-"""Main application window coordinating UI layout, menus, controllers, and dialogs."""
+"""Main application window coordinating UI layout, menus, controllers, animations, and diagnostics."""
 
 import threading
 from typing import Any, Optional
@@ -6,9 +6,12 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QKeySequence, QTextCursor
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -16,14 +19,27 @@ from PySide6.QtWidgets import (
 
 from app.ui.controller import AssistantController
 from app.ui.models import UIState
-from app.ui.theme import APPLICATION_STYLESHEET
+from app.ui.theme import (
+    APPLICATION_STYLESHEET,
+    COLOR_ACCENT,
+    COLOR_BG_DARK,
+    COLOR_BG_PANEL,
+    COLOR_BG_SURFACE,
+    COLOR_BORDER_SOLID,
+    COLOR_SUCCESS,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_WARNING,
+)
 from app.ui.widgets.automation_dialog import AutomationDialog
-
 from app.ui.widgets.chat_view import ChatView
 from app.ui.widgets.confirmation_dialog import ConfirmationDialog
+from app.ui.widgets.diagnostics_drawer import DiagnosticsDrawer
 from app.ui.widgets.input_bar import InputBar
 from app.ui.widgets.knowledge_dialog import KnowledgeDialog
 from app.ui.widgets.memory_dialog import MemoryDialog
+from app.ui.widgets.pixel_core import PixelCoreState
 from app.ui.widgets.settings_dialog import SettingsDialog
 from app.ui.widgets.sidebar import ConversationSidebar
 from app.ui.widgets.status_bar import SystemStatusBar
@@ -31,7 +47,7 @@ from app.ui.widgets.tasks_dialog import TasksDialog
 
 
 class MainWindow(QMainWindow):
-    """Primary desktop application window for the Local AI Personal Assistant."""
+    """Primary desktop application window for Pixel - The Living Personal AI Assistant."""
 
     def __init__(
         self,
@@ -49,9 +65,8 @@ class MainWindow(QMainWindow):
         self.task_controller = task_controller
         self.automation_controller = automation_controller
 
-
         self.setWindowTitle(f"Local AI Personal Assistant - {controller.settings.app_name}")
-        self.resize(1100, 750)
+        self.resize(1150, 780)
         self.setMinimumSize(850, 550)
         self.setStyleSheet(APPLICATION_STYLESHEET)
 
@@ -69,17 +84,12 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(100, self._initial_startup)
 
     def ensure_visible_on_screen(self) -> None:
-        """Validate window geometry against all displays and center if outside or too close to edge.
-
-        A margin of 50 px is enforced on all sides so that the title-bar and
-        taskbar region do not hide the window even when coordinates look valid.
-        """
+        """Validate window geometry against all displays and center if outside or too close to edge."""
         from PySide6.QtGui import QGuiApplication
 
         _MARGIN = 50  # px safety margin from screen edge
         current_geo = self.frameGeometry()
 
-        # Try to find the screen that currently contains the window centre
         centre = current_geo.center()
         screen = None
         for s in QGuiApplication.screens():
@@ -89,22 +99,20 @@ class MainWindow(QMainWindow):
         if screen is None:
             screen = QGuiApplication.primaryScreen()
         if screen is None:
-            return  # no display detected — skip
+            return
 
         avail = screen.availableGeometry()
 
-        # Determine if the window is within safe bounds
-        too_far_left   = current_geo.left()   < avail.left()   + _MARGIN
-        too_far_top    = current_geo.top()    < avail.top()    + _MARGIN
-        too_far_right  = current_geo.right()  > avail.right()  - _MARGIN
+        too_far_left = current_geo.left() < avail.left() + _MARGIN
+        too_far_top = current_geo.top() < avail.top() + _MARGIN
+        too_far_right = current_geo.right() > avail.right() - _MARGIN
         too_far_bottom = current_geo.bottom() > avail.bottom() - _MARGIN
         outside = not avail.contains(current_geo)
 
         if outside or too_far_left or too_far_top or too_far_right or too_far_bottom:
-            x = avail.x() + (avail.width()  - self.width())  // 2
+            x = avail.x() + (avail.width() - self.width()) // 2
             y = avail.y() + (avail.height() - self.height()) // 2
-            # Clamp to margins
-            x = max(avail.x() + _MARGIN, min(x, avail.right()  - self.width()  - _MARGIN))
+            x = max(avail.x() + _MARGIN, min(x, avail.right() - self.width() - _MARGIN))
             y = max(avail.y() + _MARGIN, min(y, avail.bottom() - self.height() - _MARGIN))
             self.move(x, y)
 
@@ -116,17 +124,18 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-        # Focus input bar text editor immediately
         if hasattr(self, "input_bar") and hasattr(self.input_bar, "text_input"):
             self.input_bar.text_input.setFocus()
             cursor = self.input_bar.text_input.textCursor()
             cursor.movePosition(QTextCursor.End)
             self.input_bar.text_input.setTextCursor(cursor)
 
-        # If summoned by voice and TTS feedback is active, acknowledge with quick local TTS
+        if hasattr(self, "chat_view") and hasattr(self.chat_view, "set_core_state"):
+            self.chat_view.set_core_state(PixelCoreState.AWAKENING)
+            QTimer.singleShot(600, lambda: self.chat_view.set_core_state(PixelCoreState.IDLE))
+
         if source == "voice" and self.tts_controller and getattr(self.controller.settings, "voice_wake_feedback", True):
             self.tts_controller.speak_text("Ready.", interrupt_current=True)
-
 
     def _setup_menu(self) -> None:
         menubar = self.menuBar()
@@ -155,6 +164,11 @@ class MainWindow(QMainWindow):
         # View Menu
         view_menu = menubar.addMenu("&View")
 
+        toggle_diag_action = QAction("&Toggle Diagnostics Drawer", self)
+        toggle_diag_action.setShortcut(QKeySequence("Ctrl+D"))
+        toggle_diag_action.triggered.connect(self._toggle_diagnostics)
+        view_menu.addAction(toggle_diag_action)
+
         auto_action = QAction("&Automation Center...", self)
         auto_action.setShortcut(QKeySequence("Ctrl+Shift+A"))
         auto_action.triggered.connect(self._open_automation)
@@ -182,7 +196,7 @@ class MainWindow(QMainWindow):
         context_action.triggered.connect(self._open_context_inspector)
         view_menu.addAction(context_action)
 
-        # Speech Menu (Phase 13)
+        # Speech Menu
         speech_menu = menubar.addMenu("&Speech")
         stop_speech_action = QAction("&Stop Speaking", self)
         stop_speech_action.setShortcut(QKeySequence("Ctrl+."))
@@ -195,7 +209,6 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
-
     def _setup_ui(self) -> None:
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
@@ -204,15 +217,83 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        # Main horizontal splitter (Sidebar | Chat)
-        self.splitter = QSplitter(Qt.Horizontal)
-        self.splitter.setChildrenCollapsible(False)
+        # Top Header Bar (Subtle living assistant title + quick actions)
+        self.header_bar = QWidget()
+        self.header_bar.setFixedHeight(42)
+        self.header_bar.setStyleSheet(f"""
+            QWidget {{
+                background-color: {COLOR_BG_PANEL};
+                border-bottom: 1px solid {COLOR_BORDER_SOLID};
+            }}
+        """)
+        header_layout = QHBoxLayout(self.header_bar)
+        header_layout.setContentsMargins(16, 0, 16, 0)
+        header_layout.setSpacing(12)
 
-        # Sidebar
+        # Sidebar Toggle Button
+        self.sidebar_toggle_btn = QPushButton("☰")
+        self.sidebar_toggle_btn.setFixedSize(30, 28)
+        self.sidebar_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.sidebar_toggle_btn.setToolTip("Toggle Session Sidebar (Ctrl+B)")
+        self.sidebar_toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: 1px solid {COLOR_BORDER_SOLID};
+                border-radius: 6px;
+                color: {COLOR_TEXT_SECONDARY};
+                font-size: 14px;
+            }}
+            QPushButton:hover {{
+                border-color: {COLOR_ACCENT};
+                color: {COLOR_ACCENT};
+                background-color: rgba(0, 242, 254, 0.08);
+            }}
+        """)
+        self.sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
+        header_layout.addWidget(self.sidebar_toggle_btn)
+
+        # Assistant Identity & Status Chip
+        self.status_pill = QLabel("⚡ PIXEL ● Ready")
+        self.status_pill.setStyleSheet(f"""
+            color: {COLOR_ACCENT};
+            font-weight: 700;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background-color: rgba(0, 242, 254, 0.08);
+            border: 1px solid rgba(0, 242, 254, 0.2);
+        """)
+        header_layout.addWidget(self.status_pill)
+
+        header_layout.addStretch()
+
+        # New Session Button in Header
+        self.header_new_btn = QPushButton("+ Session")
+        self.header_new_btn.setObjectName("chipButton")
+        self.header_new_btn.setCursor(Qt.PointingHandCursor)
+        self.header_new_btn.clicked.connect(self.controller.new_conversation)
+        header_layout.addWidget(self.header_new_btn)
+
+        # Diagnostics Drawer Toggle Button
+        self.diag_btn = QPushButton("⚙ Diagnostics")
+        self.diag_btn.setObjectName("chipButton")
+        self.diag_btn.setCursor(Qt.PointingHandCursor)
+        self.diag_btn.setToolTip("Toggle Technical Diagnostics Drawer (Ctrl+D)")
+        self.diag_btn.clicked.connect(self._toggle_diagnostics)
+        header_layout.addWidget(self.diag_btn)
+
+        root_layout.addWidget(self.header_bar)
+
+        # Main horizontal splitter (Sidebar | Chat | Diagnostics Drawer)
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(True)
+
+        # 1. Sidebar
         self.sidebar = ConversationSidebar()
         self.splitter.addWidget(self.sidebar)
 
-        # Chat Area Container (ChatView + InputBar)
+        # 2. Central Chat Container (ChatView + Floating InputBar)
         chat_container = QWidget()
         chat_layout = QVBoxLayout(chat_container)
         chat_layout.setContentsMargins(0, 0, 0, 0)
@@ -226,13 +307,31 @@ class MainWindow(QMainWindow):
 
         self.splitter.addWidget(chat_container)
 
-        # Set initial splitter proportions (260px sidebar : remaining chat)
-        self.splitter.setSizes([260, 840])
+        # 3. Diagnostics Drawer (Collapsible)
+        self.diagnostics_drawer = DiagnosticsDrawer()
+        self.splitter.addWidget(self.diagnostics_drawer)
+
+        # Proportions: 250px sidebar : 800px chat : 0px (drawer starts closed)
+        self.splitter.setSizes([250, 900, 0])
         root_layout.addWidget(self.splitter)
 
-        # System Status Bar at the bottom
+        # Minimal Bottom System Status Bar
         self.status_bar = SystemStatusBar()
         root_layout.addWidget(self.status_bar)
+
+    def _toggle_sidebar(self) -> None:
+        """Toggle conversation sidebar visibility."""
+        is_visible = self.sidebar.isVisible()
+        self.sidebar.setVisible(not is_visible)
+
+    def _toggle_diagnostics(self) -> None:
+        """Toggle diagnostics drawer visibility."""
+        is_open = self.diagnostics_drawer.is_open
+        self.diagnostics_drawer.set_open(not is_open)
+        if not is_open:
+            self.splitter.setSizes([self.splitter.sizes()[0], self.splitter.sizes()[1] - 300, 300])
+        else:
+            self.splitter.setSizes([self.splitter.sizes()[0], self.splitter.sizes()[1] + 300, 0])
 
     def _wire_signals(self) -> None:
         # Sidebar to Controller
@@ -247,15 +346,16 @@ class MainWindow(QMainWindow):
         self.input_bar.capture_screen_clicked.connect(self._on_capture_screen)
         self.input_bar.tier_changed.connect(self._on_tier_changed)
 
-        # Status Bar to Controller
+        # Status Bar & Diagnostics to Controller
         self.status_bar.model_changed.connect(self.controller.set_selected_model)
         self.status_bar.refresh_requested.connect(self.controller.check_backend_status)
+        self.diagnostics_drawer.model_selected.connect(self.controller.set_selected_model)
 
         # Controller to UI
         self.controller.state_changed.connect(self._on_state_changed)
-        self.controller.chunk_received.connect(self.chat_view.append_assistant_chunk)
-        self.controller.tool_activity_started.connect(self.chat_view.add_tool_activity)
-        self.controller.tool_activity_finished.connect(self.chat_view.finish_tool_activity)
+        self.controller.chunk_received.connect(self._on_chunk_received)
+        self.controller.tool_activity_started.connect(self._on_tool_activity_started)
+        self.controller.tool_activity_finished.connect(self._on_tool_activity_finished)
         self.controller.turn_metrics_ready.connect(self._on_turn_metrics)
         self.controller.turn_completed.connect(self._on_turn_completed)
         self.controller.turn_error.connect(self._on_turn_error)
@@ -268,7 +368,7 @@ class MainWindow(QMainWindow):
         # Confirmation Bridge
         self.controller.gui_confirmation.confirmation_requested.connect(self._show_confirmation_dialog)
 
-        # Voice Input Bridge (Phase 12)
+        # Voice Input Bridge
         if self.voice_controller:
             self.input_bar.mic_clicked.connect(self.voice_controller.toggle_recording)
             self.voice_controller.voice_state_changed.connect(self._on_voice_state_changed)
@@ -278,7 +378,7 @@ class MainWindow(QMainWindow):
             self.voice_controller.transcription_ready.connect(self._on_transcription_ready)
             self.voice_controller.voice_error.connect(self._on_voice_error)
 
-        # Voice Output / TTS Bridge (Phase 13)
+        # Voice Output / TTS Bridge
         if self.tts_controller:
             self.chat_view.speak_requested.connect(self._on_manual_speak_requested)
             self.tts_controller.tts_state_changed.connect(self._on_tts_state_changed)
@@ -317,23 +417,50 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Screenshot Error", f"Could not capture screenshot: {err}")
 
     def _on_user_send(self, text: str) -> None:
-        # Stop any currently playing speech when user sends a new message
         if self.tts_controller:
             self.tts_controller.stop_speaking()
         images = self.input_bar.get_attached_images()
         self.input_bar.clear_attachments()
         self.chat_view.add_user_message(text)
         self.chat_view.start_assistant_message()
+        self.chat_view.set_core_state(PixelCoreState.THINKING)
+        self.status_pill.setText("⚡ PIXEL ● Thinking...")
         self.input_bar.set_running_state(True)
         if images:
             self.controller.send_message(text, images=images)
         else:
             self.controller.send_message(text)
 
+    def _on_chunk_received(self, chunk: str) -> None:
+        self.chat_view.append_assistant_chunk(chunk)
+        self.chat_view.set_core_state(PixelCoreState.RESPONDING)
+        self.status_pill.setText("⚡ PIXEL ● Responding...")
+
+    def _on_tool_activity_started(self, tool_name: str, args: dict[str, Any]) -> None:
+        self.chat_view.add_tool_activity(tool_name, args)
+        self.chat_view.set_core_state(PixelCoreState.EXECUTING)
+        self.status_pill.setText(f"⚡ PIXEL ● Executing {tool_name}...")
+
+    def _on_tool_activity_finished(self, tool_name: str, success: bool, summary: str) -> None:
+        self.chat_view.finish_tool_activity(tool_name, success, summary)
+
     def _on_state_changed(self, state_str: str) -> None:
         state = UIState(state_str)
         is_running = state in (UIState.THINKING, UIState.STREAMING, UIState.EXECUTING_TOOL)
         self.input_bar.set_running_state(is_running)
+
+        if state == UIState.IDLE:
+            self.chat_view.set_core_state(PixelCoreState.IDLE)
+            self.status_pill.setText("⚡ PIXEL ● Ready")
+        elif state == UIState.THINKING:
+            self.chat_view.set_core_state(PixelCoreState.THINKING)
+            self.status_pill.setText("⚡ PIXEL ● Thinking...")
+        elif state == UIState.STREAMING:
+            self.chat_view.set_core_state(PixelCoreState.RESPONDING)
+            self.status_pill.setText("⚡ PIXEL ● Responding...")
+        elif state == UIState.EXECUTING_TOOL:
+            self.chat_view.set_core_state(PixelCoreState.EXECUTING)
+            self.status_pill.setText("⚡ PIXEL ● Executing...")
 
     def _on_tier_changed(self, tier: str) -> None:
         self.controller.set_selected_model(tier)
@@ -341,6 +468,7 @@ class MainWindow(QMainWindow):
 
     def _on_turn_metrics(self, metrics: Any) -> None:
         self.chat_view.set_current_metrics(metrics)
+        self.diagnostics_drawer.update_turn_metrics(metrics)
         self.status_bar.set_performance_metric(
             model_name=getattr(metrics, "model_name", ""),
             latency_seconds=getattr(metrics, "total_time", 0.0),
@@ -349,6 +477,7 @@ class MainWindow(QMainWindow):
 
     def _on_backend_status_updated(self, status: Any) -> None:
         self.status_bar.update_status(status)
+        self.diagnostics_drawer.update_backend_status(status)
         self.sidebar.update_resource_meters(
             cpu_percent=getattr(status, "cpu_percent", 0.0),
             ram_percent=getattr(status, "ram_percent", 0.0),
@@ -356,16 +485,23 @@ class MainWindow(QMainWindow):
 
     def _on_turn_completed(self, full_response: str) -> None:
         self.input_bar.set_running_state(False)
+        self.chat_view.set_core_state(PixelCoreState.SUCCESS)
+        self.status_pill.setText("⚡ PIXEL ● Ready")
+        QTimer.singleShot(1500, lambda: self.chat_view.set_core_state(PixelCoreState.IDLE))
+
         if not full_response or not full_response.strip():
             if self.chat_view._current_assistant_bubble and not self.chat_view._current_assistant_bubble.get_content().strip():
                 self.chat_view._current_assistant_bubble.set_content("*(No response produced)*")
-        # Handle auto-speak if configured
+
         if self.tts_controller and full_response and full_response.strip():
             self.tts_controller.handle_turn_completed(full_response)
 
     def _on_turn_error(self, error_msg: str) -> None:
         self.input_bar.set_running_state(False)
         self.chat_view.mark_assistant_error(error_msg)
+        self.chat_view.set_core_state(PixelCoreState.ERROR)
+        self.status_pill.setText("⚠ PIXEL ● Error")
+        QTimer.singleShot(3000, lambda: self.chat_view.set_core_state(PixelCoreState.IDLE))
 
     def _on_active_conversation_changed(self, cid: str, title: str, messages: list) -> None:
         if self.tts_controller:
@@ -380,7 +516,6 @@ class MainWindow(QMainWindow):
         event: threading.Event,
         result_holder: list[bool],
     ) -> None:
-        """Display the modal confirmation dialog on the main UI thread."""
         try:
             dialog = ConfirmationDialog(context=context, decision=decision, parent=self)
             dialog.exec()
@@ -428,60 +563,69 @@ class MainWindow(QMainWindow):
         dlg = ContextInspectorDialog(diagnostics=diag, parent=self)
         dlg.exec()
 
-
     def _show_about(self) -> None:
         cfg = self.controller.settings
         QMessageBox.about(
             self,
             f"About {cfg.app_name}",
             f"<b>{cfg.app_name} (v{cfg.version})</b><br><br>"
-            "A secure, fully local AI personal assistant powered by Ollama.<br>"
-            "49 registered tools across Filesystem, System, Apps, Terminal, Memory, RAG, and Browser.<br><br>"
+            "A living, cinematic, fully local AI personal assistant powered by Ollama.<br>"
+            "69+ registered tools across Filesystem, System, Apps, Terminal, Memory, RAG, and Browser.<br><br>"
             "Local Voice Input (STT) and Voice Output (TTS) with 100% offline privacy.",
         )
 
     def _on_voice_state_changed(self, state_str: str) -> None:
-        """Reflect voice recording and transcribing states across input and status bar."""
         self.input_bar.set_voice_state(state_str)
         self.status_bar.set_voice_state(state_str)
+        if state_str == "recording":
+            self.chat_view.set_core_state(PixelCoreState.LISTENING)
+            self.status_pill.setText("🎤 PIXEL ● Listening...")
+        elif state_str == "transcribing":
+            self.chat_view.set_core_state(PixelCoreState.THINKING)
+            self.status_pill.setText("⚡ PIXEL ● Transcribing...")
+        else:
+            self.chat_view.set_core_state(PixelCoreState.IDLE)
+            self.status_pill.setText("⚡ PIXEL ● Ready")
 
     def _on_transcription_ready(self, text: str) -> None:
-        """Place transcribed speech into input field for user review and editing."""
         self.input_bar.set_text(text)
 
     def _on_voice_error(self, err_msg: str) -> None:
-        """Display friendly notice when voice recording or transcription fails."""
         self.input_bar.set_voice_state("idle")
         self.status_bar.set_voice_state("idle")
+        self.chat_view.set_core_state(PixelCoreState.ERROR)
         QMessageBox.warning(self, "Voice Input Notice", err_msg)
 
     def _on_manual_speak_requested(self, text: str) -> None:
-        """Handle manual speak button clicked on a message bubble."""
         if self.tts_controller:
             self.tts_controller.speak_text(text, interrupt_current=True)
 
     def _on_tts_state_changed(self, state_str: str) -> None:
-        """Update TTS status indicator."""
         self.status_bar.set_tts_state(state_str)
+        if state_str == "speaking":
+            self.chat_view.set_core_state(PixelCoreState.RESPONDING)
+            self.status_pill.setText("🔊 PIXEL ● Speaking...")
+        elif state_str == "synthesizing":
+            self.chat_view.set_core_state(PixelCoreState.THINKING)
+        else:
+            if not self.input_bar.send_btn.isHidden():
+                self.chat_view.set_core_state(PixelCoreState.IDLE)
+                self.status_pill.setText("⚡ PIXEL ● Ready")
 
     def _on_tts_error(self, err_msg: str) -> None:
-        """Display notice on TTS playback error."""
         self.status_bar.set_tts_state("idle")
         QMessageBox.warning(self, "Speech Output Notice", err_msg)
 
     def _on_stop_speech(self) -> None:
-        """Halt active speech and clear queue."""
         if self.tts_controller:
             self.tts_controller.stop_speaking()
 
     def showEvent(self, event) -> None:
-        """Restart status timer when window is shown."""
         super().showEvent(event)
         if not self.status_timer.isActive():
             self.status_timer.start(5000)
 
     def closeEvent(self, event) -> None:
-        """Handle window close event: minimize to system tray if configured, or exit cleanly."""
         self.status_timer.stop()
         if self.controller.settings.minimize_to_tray:
             event.ignore()

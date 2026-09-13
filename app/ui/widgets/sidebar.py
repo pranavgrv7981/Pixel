@@ -1,4 +1,4 @@
-"""Conversation sidebar widget providing Jarvis Command Center controls, live search, and resource meters."""
+"""Conversation sidebar widget providing Pixel session management, live search, and host telemetry."""
 
 from typing import Optional
 from PySide6.QtCore import Qt, Signal
@@ -19,7 +19,7 @@ from app.ui.theme import (
     COLOR_ACCENT,
     COLOR_BG_PANEL,
     COLOR_BG_SURFACE,
-    COLOR_BORDER,
+    COLOR_BORDER_SOLID,
     COLOR_SUCCESS,
     COLOR_TEXT_MUTED,
     COLOR_TEXT_PRIMARY,
@@ -29,7 +29,7 @@ from app.ui.theme import (
 
 
 class ConversationSidebar(QWidget):
-    """Command Center sidebar for session management, conversation search, and live host telemetry."""
+    """Collapsible sidebar for session management, conversation search, and live host telemetry."""
 
     new_chat_clicked = Signal()
     conversation_selected = Signal(str)
@@ -41,9 +41,9 @@ class ConversationSidebar(QWidget):
         self._active_id: Optional[str] = None
 
         self.setStyleSheet(f"""
-            QWidget {{
+            ConversationSidebar {{
                 background-color: {COLOR_BG_PANEL};
-                border-right: 1px solid {COLOR_BORDER};
+                border-right: 1px solid {COLOR_BORDER_SOLID};
             }}
         """)
 
@@ -51,13 +51,13 @@ class ConversationSidebar(QWidget):
         layout.setContentsMargins(14, 16, 14, 14)
         layout.setSpacing(12)
 
-        # 1. Header: Holographic Logo & System Online Status
+        # 1. Header: Branding & Online Status
         header_vbox = QVBoxLayout()
         header_vbox.setSpacing(4)
 
         top_row = QHBoxLayout()
-        title_label = QLabel("⚡ JARVIS // AI")
-        title_label.setStyleSheet("font-size: 15px; font-weight: 800; color: #00f2fe; letter-spacing: 1px; font-family: Consolas, monospace;")
+        title_label = QLabel("⚡ PIXEL // AI")
+        title_label.setStyleSheet(f"font-size: 15px; font-weight: 800; color: {COLOR_ACCENT}; letter-spacing: 1px; font-family: Consolas, monospace;")
         top_row.addWidget(title_label)
 
         top_row.addStretch()
@@ -88,7 +88,7 @@ class ConversationSidebar(QWidget):
         self.search_input.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {COLOR_BG_SURFACE};
-                border: 1px solid {COLOR_BORDER};
+                border: 1px solid {COLOR_BORDER_SOLID};
                 border-radius: 6px;
                 padding: 4px 8px;
                 font-size: 11px;
@@ -116,7 +116,7 @@ class ConversationSidebar(QWidget):
         resource_box.setStyleSheet(f"""
             QWidget {{
                 background-color: {COLOR_BG_SURFACE};
-                border: 1px solid {COLOR_BORDER};
+                border: 1px solid {COLOR_BORDER_SOLID};
                 border-radius: 8px;
                 padding: 8px;
             }}
@@ -147,7 +147,7 @@ class ConversationSidebar(QWidget):
         self.cpu_bar.setValue(0)
         self.cpu_bar.setStyleSheet(f"""
             QProgressBar {{
-                background-color: #0b0e17;
+                background-color: #080a10;
                 border: none;
                 border-radius: 2px;
             }}
@@ -176,7 +176,7 @@ class ConversationSidebar(QWidget):
         self.ram_bar.setValue(0)
         self.ram_bar.setStyleSheet(f"""
             QProgressBar {{
-                background-color: #0b0e17;
+                background-color: #080a10;
                 border: none;
                 border-radius: 2px;
             }}

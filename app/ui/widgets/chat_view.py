@@ -1,8 +1,9 @@
-"""Scrollable conversation history view managing Jarvis message bubbles, tool activities, and TTS speech triggers."""
+"""Scrollable conversation history view managing Pixel message bubbles, tool activities, and AI core animation."""
 
 from typing import Any, Optional
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -11,11 +12,12 @@ from PySide6.QtWidgets import (
 from app.agent.conversation import Message
 from app.ui.models import MessageRole, TurnMetrics
 from app.ui.widgets.message_bubble import MessageBubble
+from app.ui.widgets.pixel_core import PixelCoreState, PixelCoreWidget
 from app.ui.widgets.tool_activity import ToolActivityWidget
 
 
 class ChatView(QScrollArea):
-    """Scrollable container rendering conversation messages, intermediate tool badges, and speech actions."""
+    """Scrollable container rendering conversation messages, intermediate tool badges, and Pixel AI Core."""
 
     speak_requested = Signal(str)
 
@@ -27,32 +29,49 @@ class ChatView(QScrollArea):
 
         self.container = QWidget()
         self.container_layout = QVBoxLayout(self.container)
-        self.container_layout.setContentsMargins(18, 16, 18, 16)
-        self.container_layout.setSpacing(10)
+        self.container_layout.setContentsMargins(20, 16, 20, 16)
+        self.container_layout.setSpacing(12)
+
+        # AI Core Visual Header (Living presence at top of conversation)
+        core_box = QWidget()
+        core_layout = QHBoxLayout(core_box)
+        core_layout.setContentsMargins(0, 4, 0, 8)
+        core_layout.addStretch()
+        self.core_widget = PixelCoreWidget(state=PixelCoreState.IDLE, size=88)
+        core_layout.addWidget(self.core_widget)
+        core_layout.addStretch()
+        self.container_layout.addWidget(core_box)
+
+        # Bottom stretch to keep messages pushed downwards cleanly
         self.container_layout.addStretch()
 
         self.setWidget(self.container)
         self._current_assistant_bubble: Optional[MessageBubble] = None
         self._active_tools: dict[str, ToolActivityWidget] = {}
 
+    def set_core_state(self, state: PixelCoreState) -> None:
+        """Update the visual animation state of the Pixel AI Core."""
+        if hasattr(self, "core_widget") and self.core_widget:
+            self.core_widget.set_state(state)
+
     def scroll_to_bottom(self) -> None:
-        """Ensure latest messages are visible."""
+        """Ensure latest messages are visible with smooth response."""
         QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()))
 
     def add_user_message(self, text: str) -> MessageBubble:
         """Add user message bubble to view."""
         bubble = MessageBubble(role=MessageRole.USER, initial_content=text)
-        idx = max(0, self.container_layout.count() - 1)
+        idx = max(1, self.container_layout.count() - 1)
         self.container_layout.insertWidget(idx, bubble)
         self.scroll_to_bottom()
         return bubble
 
-    def start_assistant_message(self, status_text: str = "JARVIS PROCESSING // Analyzing intent...") -> MessageBubble:
+    def start_assistant_message(self, status_text: str = "PIXEL THINKING // Analyzing intent...") -> MessageBubble:
         """Create a new streaming assistant bubble showing a thinking placeholder."""
         bubble = MessageBubble(role=MessageRole.ASSISTANT, initial_content="")
         bubble.set_thinking(status_text)
         bubble.speak_clicked.connect(self.speak_requested.emit)
-        idx = max(0, self.container_layout.count() - 1)
+        idx = max(1, self.container_layout.count() - 1)
         self.container_layout.insertWidget(idx, bubble)
         self._current_assistant_bubble = bubble
         self.scroll_to_bottom()
@@ -95,7 +114,7 @@ class ChatView(QScrollArea):
     def add_tool_activity(self, tool_name: str, args: dict[str, Any]) -> ToolActivityWidget:
         """Add an in-progress tool activity card."""
         widget = ToolActivityWidget(tool_name=tool_name, initial_args=args)
-        idx = max(0, self.container_layout.count() - 1)
+        idx = max(1, self.container_layout.count() - 1)
         self.container_layout.insertWidget(idx, widget)
         self._active_tools[tool_name] = widget
         self.scroll_to_bottom()
@@ -109,9 +128,9 @@ class ChatView(QScrollArea):
             self.scroll_to_bottom()
 
     def clear(self) -> None:
-        """Clear all messages from the view."""
-        while self.container_layout.count() > 1:
-            item = self.container_layout.takeAt(0)
+        """Clear all conversation messages from the view, preserving the core header."""
+        while self.container_layout.count() > 2:  # index 0 is core_box, last is stretch
+            item = self.container_layout.takeAt(1)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
@@ -127,6 +146,6 @@ class ChatView(QScrollArea):
             elif msg.role == "assistant" and msg.content:
                 bubble = MessageBubble(role=MessageRole.ASSISTANT, initial_content=msg.content)
                 bubble.speak_clicked.connect(self.speak_requested.emit)
-                idx = max(0, self.container_layout.count() - 1)
+                idx = max(1, self.container_layout.count() - 1)
                 self.container_layout.insertWidget(idx, bubble)
         self.scroll_to_bottom()

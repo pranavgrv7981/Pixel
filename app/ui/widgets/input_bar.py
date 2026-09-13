@@ -17,12 +17,15 @@ from PySide6.QtWidgets import (
 from app.ui.theme import (
     COLOR_ACCENT,
     COLOR_ACCENT_HOVER,
+    COLOR_ACCENT_SUBTLE,
     COLOR_BG_DARK,
+    COLOR_BG_GLASS,
     COLOR_BG_INPUT,
     COLOR_BG_PANEL,
     COLOR_BG_SURFACE,
     COLOR_BORDER,
     COLOR_BORDER_FOCUS,
+    COLOR_BORDER_SOLID,
     COLOR_DANGER,
     COLOR_SUCCESS,
     COLOR_TEXT_MUTED,
@@ -64,7 +67,7 @@ class ImageThumbnailWidget(QWidget):
         self.setStyleSheet(f"""
             QWidget {{
                 background-color: {COLOR_BG_SURFACE};
-                border: 1px solid {COLOR_BORDER};
+                border: 1px solid {COLOR_BORDER_SOLID};
                 border-radius: 6px;
             }}
         """)
@@ -125,7 +128,7 @@ class ImageThumbnailWidget(QWidget):
 
 
 class InputBar(QWidget):
-    """Command capsule input bar with quick action chips, multiline prompt, voice STT, and attachment controls."""
+    """Floating command composer with quick action chips, multiline prompt, voice STT, and attachment controls."""
 
     send_submitted = Signal(str)
     cancel_clicked = Signal()
@@ -139,17 +142,17 @@ class InputBar(QWidget):
         self._attached_images: list[ImageInput] = []
 
         self.setStyleSheet(f"""
-            QWidget {{
+            InputBar {{
                 background-color: {COLOR_BG_PANEL};
-                border-top: 1px solid {COLOR_BORDER};
+                border-top: 1px solid {COLOR_BORDER_SOLID};
             }}
         """)
 
         main_vbox = QVBoxLayout(self)
-        main_vbox.setContentsMargins(18, 10, 18, 14)
+        main_vbox.setContentsMargins(20, 8, 20, 14)
         main_vbox.setSpacing(8)
 
-        # 1. Quick Actions & Mode Bar (Top Chip Strip)
+        # 1. Quick Action Strip (Top Chip Row)
         chips_row = QHBoxLayout()
         chips_row.setContentsMargins(0, 0, 0, 0)
         chips_row.setSpacing(8)
@@ -211,22 +214,22 @@ class InputBar(QWidget):
         self.attachment_bar.setVisible(False)
         main_vbox.addWidget(self.attachment_bar)
 
-        # 3. Main Prompt Capsule (Text Input + Send/Stop Button)
+        # 3. Main Floating Composer Capsule (Text Input + Send/Stop Button)
         input_container = QWidget()
         input_container.setStyleSheet(f"""
             QWidget {{
                 background-color: {COLOR_BG_SURFACE};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: 10px;
+                border: 1px solid {COLOR_BORDER_SOLID};
+                border-radius: 12px;
             }}
         """)
         input_layout = QHBoxLayout(input_container)
-        input_layout.setContentsMargins(10, 6, 10, 6)
+        input_layout.setContentsMargins(12, 6, 10, 6)
         input_layout.setSpacing(10)
 
         # Prompt input text box
         self.text_input = PromptTextEdit()
-        self.text_input.setPlaceholderText("Ask Jarvis anything or execute a command...")
+        self.text_input.setPlaceholderText("Message Pixel or type a command...")
         self.text_input.setFixedHeight(48)
         self.text_input.setStyleSheet(f"""
             QTextEdit {{
@@ -243,7 +246,7 @@ class InputBar(QWidget):
         # Send Button (Primary Gradient)
         self.send_btn = QPushButton("Send ↵")
         self.send_btn.setObjectName("primaryButton")
-        self.send_btn.setFixedSize(76, 36)
+        self.send_btn.setFixedSize(78, 36)
         self.send_btn.setCursor(Qt.PointingHandCursor)
         self.send_btn.clicked.connect(self._handle_send)
         input_layout.addWidget(self.send_btn)
@@ -251,7 +254,7 @@ class InputBar(QWidget):
         # Stop / Cancel Button (initially hidden)
         self.stop_btn = QPushButton("■ Stop")
         self.stop_btn.setObjectName("dangerButton")
-        self.stop_btn.setFixedSize(76, 36)
+        self.stop_btn.setFixedSize(78, 36)
         self.stop_btn.setCursor(Qt.PointingHandCursor)
         self.stop_btn.clicked.connect(self.cancel_clicked.emit)
         self.stop_btn.setVisible(False)
@@ -344,7 +347,7 @@ class InputBar(QWidget):
             self.mic_chip.setStyleSheet(f"""
                 QPushButton {{
                     background-color: {COLOR_WARNING};
-                    border: 1px solid {COLOR_BORDER};
+                    border: 1px solid {COLOR_BORDER_SOLID};
                     color: #0b0e17;
                     font-size: 13px;
                     border-radius: 12px;

@@ -1,4 +1,4 @@
-"""Message bubble widget with Jarvis-class styling, telemetry chips, copy actions, and TTS."""
+"""Message bubble widget with cinematic styling, entrance animation, telemetry chips, copy actions, and TTS."""
 
 from datetime import datetime, timezone
 import html
@@ -15,16 +15,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.animation import slide_up_fade_in
 from app.ui.models import MessageRole, TurnMetrics
 from app.ui.theme import (
     COLOR_ACCENT,
     COLOR_ACCENT_HOVER,
+    COLOR_ACCENT_SUBTLE,
     COLOR_BG_DARK,
     COLOR_BG_INPUT,
     COLOR_BG_PANEL,
     COLOR_BG_SURFACE,
     COLOR_BORDER,
     COLOR_BORDER_FOCUS,
+    COLOR_BORDER_SOLID,
     COLOR_DANGER,
     COLOR_PURPLE,
     COLOR_SUCCESS,
@@ -37,15 +40,15 @@ from app.ui.theme import (
 
 
 def _format_markdown_to_html(text: str) -> str:
-    """Lightweight deterministic markdown to HTML converter for Jarvis chat bubbles."""
+    """Lightweight deterministic markdown to HTML converter for chat bubbles."""
     escaped = html.escape(text)
 
     # Code blocks: ```language ... ```
     escaped = re.sub(
         r"```(\w*)\n(.*?)```",
-        r'<div style="margin: 8px 0; border: 1px solid #2b324c; border-radius: 6px; overflow: hidden;">'
-        r'<div style="background-color: #141724; padding: 4px 10px; font-family: Consolas, monospace; font-size: 10px; color: #00f2fe; border-bottom: 1px solid #2b324c; font-weight: bold;">\1 CODE BLOCK</div>'
-        r'<pre style="background-color: #0a0c14; padding: 10px 12px; margin: 0; font-family: Consolas, monospace; font-size: 12px; color: #e2e8f0; line-height: 1.4;"><code>\2</code></pre>'
+        r'<div style="margin: 8px 0; border: 1px solid #1e2438; border-radius: 8px; overflow: hidden;">'
+        r'<div style="background-color: #101422; padding: 5px 12px; font-family: Consolas, monospace; font-size: 10px; color: #00f2fe; border-bottom: 1px solid #1e2438; font-weight: bold; letter-spacing: 0.5px;">\1 CODE BLOCK</div>'
+        r'<pre style="background-color: #080a10; padding: 12px 14px; margin: 0; font-family: Consolas, monospace; font-size: 12px; color: #f1f5f9; line-height: 1.45;"><code>\2</code></pre>'
         r'</div>',
         escaped,
         flags=re.DOTALL,
@@ -53,13 +56,13 @@ def _format_markdown_to_html(text: str) -> str:
     # Inline code: `code`
     escaped = re.sub(
         r"`([^`]+)`",
-        r'<code style="background-color: #131728; padding: 2px 6px; border-radius: 4px; font-family: Consolas, monospace; color: #00f2fe; border: 1px solid #2b324c;">\1</code>',
+        r'<code style="background-color: #121626; padding: 2px 7px; border-radius: 4px; font-family: Consolas, monospace; color: #00f2fe; border: 1px solid #1e2438; font-size: 11px;">\1</code>',
         escaped,
     )
     # Bold: **bold**
-    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<b style='color: #ffffff;'>\1</b>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<b style='color: #ffffff; font-weight: 600;'>\1</b>", escaped)
     # Italics: *italic*
-    escaped = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", escaped)
+    escaped = re.sub(r"\*([^*]+)\*", r"<i style='color: #cbd5e1;'>\1</i>", escaped)
     # Lists: - item
     escaped = re.sub(r"^[ \t]*-[ \t]+(.*)$", r"• \1", escaped, flags=re.MULTILINE)
 
@@ -71,11 +74,11 @@ def _format_markdown_to_html(text: str) -> str:
             p = p.replace("\n", "<br>")
         html_paragraphs.append(p)
 
-    return "<p style='margin: 0; line-height: 1.5;'>" + "</p><p style='margin: 8px 0 0 0; line-height: 1.5;'>".join(html_paragraphs) + "</p>"
+    return "<p style='margin: 0; line-height: 1.55;'>" + "</p><p style='margin: 8px 0 0 0; line-height: 1.55;'>".join(html_paragraphs) + "</p>"
 
 
 class MessageBubble(QWidget):
-    """Chat message card with HUD identity badges, latency telemetry chip, copy button, and TTS triggers."""
+    """Chat message card with identity badges, latency telemetry chip, copy button, and TTS triggers."""
 
     speak_clicked = Signal(str)
 
@@ -93,6 +96,7 @@ class MessageBubble(QWidget):
         self._metrics = metrics
         self._is_thinking = (role == MessageRole.ASSISTANT and not initial_content)
         self.timestamp = timestamp or datetime.now(timezone.utc)
+        self._has_animated = False
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(6, 4, 6, 4)
@@ -103,20 +107,20 @@ class MessageBubble(QWidget):
         header_layout.setContentsMargins(4, 0, 4, 0)
         header_layout.setSpacing(8)
 
-        # Futuristic Role Badge
+        # Identity Role Badge
         if role == MessageRole.USER:
             role_text = "OPERATOR // YOU"
-            role_style = "color: #00f2fe; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; font-family: Consolas, monospace;"
+            role_style = f"color: {COLOR_ACCENT}; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; font-family: Consolas, monospace;"
         elif role == MessageRole.ASSISTANT:
-            role_text = "JARVIS // ASSISTANT"
-            role_style = "color: #a855f7; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; font-family: Consolas, monospace;"
+            role_text = "PIXEL // ASSISTANT"
+            role_style = f"color: {COLOR_PURPLE}; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; font-family: Consolas, monospace;"
         else:
             role_text = "SYSTEM // CORE"
-            role_style = "color: #f59e0b; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; font-family: Consolas, monospace;"
+            role_style = f"color: {COLOR_WARNING}; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; font-family: Consolas, monospace;"
 
-        role_label = QLabel(role_text)
-        role_label.setStyleSheet(role_style)
-        header_layout.addWidget(role_label)
+        self.role_label = QLabel(role_text)
+        self.role_label.setStyleSheet(role_style)
+        header_layout.addWidget(self.role_label)
 
         time_str = self.timestamp.strftime("%H:%M")
         time_label = QLabel(time_str)
@@ -136,9 +140,11 @@ class MessageBubble(QWidget):
                 background: transparent;
                 font-size: 11px;
                 color: {COLOR_TEXT_MUTED};
+                border-radius: 4px;
             }}
             QPushButton:hover {{
                 color: {COLOR_ACCENT};
+                background: rgba(255, 255, 255, 0.05);
             }}
         """)
         self.copy_btn.clicked.connect(self._copy_to_clipboard)
@@ -156,9 +162,11 @@ class MessageBubble(QWidget):
                     background: transparent;
                     font-size: 11px;
                     color: {COLOR_TEXT_MUTED};
+                    border-radius: 4px;
                 }}
                 QPushButton:hover {{
                     color: #4facfe;
+                    background: rgba(255, 255, 255, 0.05);
                 }}
             """)
             self.speak_btn.clicked.connect(lambda: self.speak_clicked.emit(self._raw_content))
@@ -173,22 +181,23 @@ class MessageBubble(QWidget):
         self.browser.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         if role == MessageRole.USER:
-            bg_color = "#181d2f"
-            border_style = "border: 1px solid #2e385c; border-left: 3px solid #00f2fe;"
+            bg_color = "#141828"
+            border_style = f"border: 1px solid #222944; border-left: 3px solid {COLOR_ACCENT};"
         elif role == MessageRole.ASSISTANT:
-            bg_color = "#131624"
-            border_style = "border: 1px solid #232840; border-left: 3px solid #a855f7;"
+            bg_color = "#10131e"
+            border_style = f"border: 1px solid #1a2034; border-left: 3px solid {COLOR_PURPLE};"
         else:
-            bg_color = "#181520"
-            border_style = "border: 1px solid #382c1e; border-left: 3px solid #f59e0b;"
+            bg_color = "#14121a"
+            border_style = f"border: 1px solid #2a2214; border-left: 3px solid {COLOR_WARNING};"
 
         self.browser.setStyleSheet(f"""
             QTextBrowser {{
                 background-color: {bg_color};
                 {border_style}
-                border-radius: 8px;
+                border-radius: 10px;
                 padding: 10px 14px;
                 color: {COLOR_TEXT_PRIMARY};
+                font-size: 13px;
             }}
         """)
 
@@ -209,6 +218,12 @@ class MessageBubble(QWidget):
         if metrics:
             self.set_metrics(metrics)
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._has_animated:
+            self._has_animated = True
+            slide_up_fade_in(self, offset_y=12, duration_ms=200)
+
     def _copy_to_clipboard(self) -> None:
         """Copy raw message text to clipboard with visual confirmation."""
         if self._raw_content:
@@ -218,8 +233,8 @@ class MessageBubble(QWidget):
                 self.copy_btn.setText("✓")
                 QTimer.singleShot(1500, lambda: self.copy_btn.setText("📋"))
 
-    def set_thinking(self, status_text: str = "JARVIS PROCESSING // Analyzing intent...") -> None:
-        """Display an animated HUD thinking indicator."""
+    def set_thinking(self, status_text: str = "PIXEL THINKING // Analyzing intent...") -> None:
+        """Display an animated thinking indicator."""
         self._is_thinking = True
         html_content = (
             f'<div style="color: #64748b; font-family: Consolas, monospace; font-size: 11px;">'
@@ -268,7 +283,7 @@ class MessageBubble(QWidget):
         self._raw_content = f"⚠ **Unable to generate a response.**\n\n*Reason:* {error_msg}"
         html_content = (
             f'<div style="color: #f43f5e; background-color: rgba(244, 63, 94, 0.08); '
-            f'border-left: 3px solid #f43f5e; padding: 8px 12px; border-radius: 4px; font-family: Consolas, monospace;">'
+            f'border-left: 3px solid #f43f5e; padding: 8px 12px; border-radius: 6px; font-family: Consolas, monospace;">'
             f'<b style="color: #ffffff;">⚠ Unable to generate a response.</b><br><br>'
             f'<span style="color: #94a3b8; font-size: 11px;">Reason: {html.escape(error_msg)}</span>'
             f'</div>'

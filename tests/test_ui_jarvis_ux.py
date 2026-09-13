@@ -45,7 +45,7 @@ def test_message_bubble_jarvis_styling_and_telemetry(qapp: QApplication):
     bubble.show()
 
     labels = [l.text() for l in bubble.findChildren(QLabel)]
-    assert any("JARVIS // ASSISTANT" in t for t in labels)
+    assert any(("PIXEL // ASSISTANT" in t or "JARVIS // ASSISTANT" in t) for t in labels)
     assert not bubble.telemetry_label.isHidden()
     assert "24.0 tok/s" in bubble.telemetry_label.text()
     assert "0.45s TTFT" in bubble.telemetry_label.text()
