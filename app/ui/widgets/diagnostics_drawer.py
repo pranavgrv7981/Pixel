@@ -174,6 +174,14 @@ class DiagnosticsDrawer(QFrame):
         c_layout.addWidget(self.rag_docs_lbl)
         c_layout.addWidget(self.memory_count_lbl)
 
+        # 5. Build & Version Identifier
+        c_layout.addSpacing(6)
+        c_layout.addWidget(self._create_section_label("BUILD IDENTIFIER"))
+        from app.core.config import get_build_commit
+        self.build_lbl = QLabel(f"Pixel build: {get_build_commit()}")
+        self.build_lbl.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 10px; font-family: Consolas, monospace;")
+        c_layout.addWidget(self.build_lbl)
+
         c_layout.addStretch()
         scroll.setWidget(container)
         layout.addWidget(scroll)

@@ -68,7 +68,7 @@ class ConversationSidebar(QWidget):
 
         header_vbox.addLayout(top_row)
 
-        sub_title = QLabel("AUTONOMOUS PERSONAL COMMAND")
+        sub_title = QLabel("PERSONAL AI ASSISTANT")
         sub_title.setStyleSheet(f"font-size: 9px; font-weight: 600; color: {COLOR_TEXT_MUTED}; letter-spacing: 0.6px; font-family: Consolas, monospace;")
         header_vbox.addWidget(sub_title)
 

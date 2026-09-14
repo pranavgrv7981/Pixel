@@ -608,7 +608,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             f"About {cfg.app_name}",
-            f"<b>{cfg.app_name} (v{cfg.version})</b><br><br>"
+            f"<b>{cfg.app_name} (v{cfg.version} • build: {cfg.build_commit})</b><br><br>"
             "A living, cinematic, fully local AI personal assistant powered by Ollama.<br>"
             "69+ registered tools across Filesystem, System, Apps, Terminal, Memory, RAG, and Browser.<br><br>"
             "Local Voice Input (STT) and Voice Output (TTS) with 100% offline privacy.",

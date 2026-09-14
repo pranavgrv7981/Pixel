@@ -39,6 +39,10 @@ hidden_imports = [
     "app.tasks",
     "app.tools",
     "app.ui",
+    "app.ui.animation",
+    "app.ui.widgets",
+    "app.ui.widgets.pixel_core",
+    "app.ui.widgets.diagnostics_drawer",
     "app.voice",
 ]
 

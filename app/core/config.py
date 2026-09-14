@@ -9,6 +9,23 @@ from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def get_build_commit() -> str:
+    """Retrieve git short commit SHA or build identifier."""
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return "e571b03"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables or .env file."""
 
@@ -21,6 +38,7 @@ class Settings(BaseSettings):
     # Core Application
     app_name: str = Field(default="Local AI Personal Assistant", description="Application display name")
     version: str = Field(default="0.1.0", description="Application version")
+    build_commit: str = Field(default_factory=get_build_commit, description="Git commit short SHA for build identification")
     environment: Literal["development", "production", "test"] = Field(
         default="development",
         validation_alias=AliasChoices("APP_ENV", "ENVIRONMENT"),
