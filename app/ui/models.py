@@ -49,8 +49,11 @@ class TurnMetrics(BaseModel):
     ttft_ms: Optional[float] = Field(default=None, description="Time to first token in ms")
     t_generation_ms: float = Field(default=0.0, description="Active token generation latency in ms")
     t_total_ms: float = Field(default=0.0, description="Total roundtrip turn latency in ms")
-    input_tokens: int = Field(default=0, description="Estimated input tokens")
-    output_tokens: int = Field(default=0, description="Estimated output tokens")
+    t_load_ms: Optional[float] = Field(default=None, description="Model load duration in ms from Ollama")
+    t_prompt_eval_ms: Optional[float] = Field(default=None, description="Prompt eval duration in ms from Ollama")
+    t_eval_ms: Optional[float] = Field(default=None, description="Token eval duration in ms from Ollama")
+    input_tokens: int = Field(default=0, description="Estimated or reported input tokens")
+    output_tokens: int = Field(default=0, description="Estimated or reported output tokens")
 
 
 class ToolEvent(BaseModel):
@@ -87,7 +90,7 @@ class BackendStatus(BaseModel):
     """Real-time diagnostic health status of the backend subsystems."""
     ollama_connected: bool = False
     base_url: str = "http://localhost:11434"
-    model_name: str = "qwen3:30b"
+    model_name: str = "qwen3:4b"
     model_available: bool = False
     available_models: list[str] = Field(default_factory=list)
     memory_ready: bool = False

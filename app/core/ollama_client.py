@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from enum import Enum
+import re
 import time
 from typing import Any, Iterator, Optional, Union
 
@@ -115,6 +116,7 @@ class OllamaClient:
         read_t = max(self.timeout, getattr(self.settings, "ollama_generation_timeout_seconds", 600.0))
         http_timeout = httpx.Timeout(timeout=self.timeout, connect=connect_t, read=read_t, write=30.0)
         self._client = ollama.Client(host=self.base_url, timeout=http_timeout)
+        self.last_turn_metadata: Optional[dict[str, Any]] = None
 
 
     def check_connection(self) -> bool:
@@ -282,16 +284,19 @@ class OllamaClient:
         model: Optional[str] = None,
         tools: Optional[list[dict[str, Any]]] = None,
         options: Optional[dict[str, Any]] = None,
+        think: Optional[bool] = None,
+        keep_alive: Optional[Union[float, str]] = None,
     ) -> ModelResponse:
         """Send a synchronous chat request to the Ollama model."""
         target_model = model or self.default_model
         formatted_messages = self._normalize_messages(messages)
 
         logger.info(
-            "Sending chat request to model '%s' (%d messages, %d tools)",
+            "Sending chat request to model '%s' (%d messages, %d tools, think=%s)",
             target_model,
             len(formatted_messages),
             len(tools) if tools else 0,
+            think,
         )
 
         try:
@@ -306,17 +311,43 @@ class OllamaClient:
                 "messages": formatted_messages,
                 "stream": False,
             }
-            if merged_options:
-                if "keep_alive" in merged_options:
-                    kwargs["keep_alive"] = merged_options.pop("keep_alive")
-                kwargs["options"] = merged_options
-            if "keep_alive" not in kwargs and getattr(self.settings, "ollama_keep_alive", None):
+            if think is not None:
+                kwargs["think"] = think
+            if keep_alive is not None:
+                kwargs["keep_alive"] = keep_alive
+            elif merged_options and "keep_alive" in merged_options:
+                kwargs["keep_alive"] = merged_options.pop("keep_alive")
+            elif getattr(self.settings, "ollama_keep_alive", None):
                 kwargs["keep_alive"] = self.settings.ollama_keep_alive
+
+            if merged_options:
+                kwargs["options"] = merged_options
             if tools is not None:
                 kwargs["tools"] = tools
 
             response = self._client.chat(**kwargs)
 
+            # Capture Ollama timing and token metadata
+            total_dur = getattr(response, "total_duration", None) or (response.get("total_duration") if isinstance(response, dict) else None)
+            load_dur = getattr(response, "load_duration", None) or (response.get("load_duration") if isinstance(response, dict) else None)
+            prompt_eval_cnt = getattr(response, "prompt_eval_count", None) or (response.get("prompt_eval_count") if isinstance(response, dict) else None)
+            prompt_eval_dur = getattr(response, "prompt_eval_duration", None) or (response.get("prompt_eval_duration") if isinstance(response, dict) else None)
+            eval_cnt = getattr(response, "eval_count", None) or (response.get("eval_count") if isinstance(response, dict) else None)
+            eval_dur = getattr(response, "eval_duration", None) or (response.get("eval_duration") if isinstance(response, dict) else None)
+            self.last_turn_metadata = {
+                "model": target_model,
+                "total_duration_ns": total_dur,
+                "total_duration_ms": (total_dur / 1e6) if total_dur else None,
+                "load_duration_ns": load_dur,
+                "load_duration_ms": (load_dur / 1e6) if load_dur else None,
+                "prompt_eval_count": prompt_eval_cnt,
+                "prompt_eval_duration_ns": prompt_eval_dur,
+                "prompt_eval_duration_ms": (prompt_eval_dur / 1e6) if prompt_eval_dur else None,
+                "eval_count": eval_cnt,
+                "eval_duration_ns": eval_dur,
+                "eval_duration_ms": (eval_dur / 1e6) if eval_dur else None,
+                "think": think,
+            }
 
             # Extract response content and tool calls
             content: str = ""
@@ -353,10 +384,13 @@ class OllamaClient:
                     })
 
             logger.info(
-                "Received response from model '%s' (%d chars, %d tool calls)",
+                "Received response from model '%s' (%d chars, %d tool calls, load=%.2fms, prompt_eval=%.2fms, eval=%.2fms)",
                 target_model,
                 len(content),
                 len(parsed_tool_calls),
+                (load_dur / 1e6) if load_dur else 0.0,
+                (prompt_eval_dur / 1e6) if prompt_eval_dur else 0.0,
+                (eval_dur / 1e6) if eval_dur else 0.0,
             )
             return ModelResponse(content, parsed_tool_calls)
 
@@ -393,16 +427,19 @@ class OllamaClient:
         model: Optional[str] = None,
         options: Optional[dict[str, Any]] = None,
         think: bool = True,
+        keep_alive: Optional[Union[float, str]] = None,
     ) -> Iterator[str]:
         """Send a streaming chat request to the Ollama model with low-latency optimizations."""
         target_model = model or self.default_model
         formatted_messages = self._normalize_messages(messages)
 
-        logger.info("CHAT START model=%s (messages=%d, think=%s)", target_model, len(formatted_messages), think)
+        logger.info("CHAT START model=%s (messages=%d, think=%s, keep_alive=%s)", target_model, len(formatted_messages), think, keep_alive)
         start_t = time.perf_counter()
         first_token_t: Optional[float] = None
         chunks_count = 0
         in_think_block = False
+        buffer_tokens: list[str] = []
+        yielded_any = False
 
         try:
             merged_options: dict[str, Any] = {}
@@ -415,24 +452,54 @@ class OllamaClient:
                 "model": target_model,
                 "messages": formatted_messages,
                 "stream": True,
+                "think": think,
             }
-            if merged_options:
-                if "keep_alive" in merged_options:
-                    kwargs["keep_alive"] = merged_options.pop("keep_alive")
-                kwargs["options"] = merged_options
-            if "keep_alive" not in kwargs and getattr(self.settings, "ollama_keep_alive", None):
+            if keep_alive is not None:
+                kwargs["keep_alive"] = keep_alive
+            elif merged_options and "keep_alive" in merged_options:
+                kwargs["keep_alive"] = merged_options.pop("keep_alive")
+            elif getattr(self.settings, "ollama_keep_alive", None):
                 kwargs["keep_alive"] = self.settings.ollama_keep_alive
+
+            if merged_options:
+                kwargs["options"] = merged_options
 
             stream = self._client.chat(**kwargs)
 
             for chunk in stream:
+                # Capture Ollama timing metadata on completion chunk
+                is_done = getattr(chunk, "done", False) or (isinstance(chunk, dict) and chunk.get("done", False))
+                if is_done:
+                    total_dur = getattr(chunk, "total_duration", None) or (chunk.get("total_duration") if isinstance(chunk, dict) else None)
+                    load_dur = getattr(chunk, "load_duration", None) or (chunk.get("load_duration") if isinstance(chunk, dict) else None)
+                    prompt_eval_cnt = getattr(chunk, "prompt_eval_count", None) or (chunk.get("prompt_eval_count") if isinstance(chunk, dict) else None)
+                    prompt_eval_dur = getattr(chunk, "prompt_eval_duration", None) or (chunk.get("prompt_eval_duration") if isinstance(chunk, dict) else None)
+                    eval_cnt = getattr(chunk, "eval_count", None) or (chunk.get("eval_count") if isinstance(chunk, dict) else None)
+                    eval_dur = getattr(chunk, "eval_duration", None) or (chunk.get("eval_duration") if isinstance(chunk, dict) else None)
+                    self.last_turn_metadata = {
+                        "model": target_model,
+                        "total_duration_ns": total_dur,
+                        "total_duration_ms": (total_dur / 1e6) if total_dur else None,
+                        "load_duration_ns": load_dur,
+                        "load_duration_ms": (load_dur / 1e6) if load_dur else None,
+                        "prompt_eval_count": prompt_eval_cnt,
+                        "prompt_eval_duration_ns": prompt_eval_dur,
+                        "prompt_eval_duration_ms": (prompt_eval_dur / 1e6) if prompt_eval_dur else None,
+                        "eval_count": eval_cnt,
+                        "eval_duration_ns": eval_dur,
+                        "eval_duration_ms": (eval_dur / 1e6) if eval_dur else None,
+                        "think": think,
+                    }
+
                 token = ""
                 msg = getattr(chunk, "message", None)
                 if msg is not None:
                     token = getattr(msg, "content", "") or ""
                 elif isinstance(chunk, dict):
                     token = chunk.get("message", {}).get("content", "")
+
                 if token:
+                    buffer_tokens.append(token)
                     # Filter out think tags when thinking is disabled
                     if not think:
                         if "<think>" in token:
@@ -451,10 +518,31 @@ class OllamaClient:
                         ttft = first_token_t - start_t
                         logger.info("FIRST TOKEN model=%s TTFT=%.2fs", target_model, ttft)
                     chunks_count += 1
+                    yielded_any = True
                     yield token
 
+            # Fallback if think filter absorbed everything or model stopped without closing tag
+            if not yielded_any and buffer_tokens:
+                combined = "".join(buffer_tokens)
+                cleaned = re.sub(r"<think>.*?</think>", "", combined, flags=re.DOTALL).strip()
+                if not cleaned:
+                    cleaned = re.sub(r"</?think>", "", combined).strip()
+                if cleaned:
+                    logger.info("Yielding recovered response after think filtering: %d chars", len(cleaned))
+                    yield cleaned
+
             total_t = time.perf_counter() - start_t
-            logger.info("CHAT COMPLETE model=%s chunks=%d elapsed=%.2fs", target_model, chunks_count, total_t)
+            meta = self.last_turn_metadata or {}
+            logger.info(
+                "CHAT COMPLETE model=%s chunks=%d elapsed=%.2fs (load=%.2fms, prompt_eval=%.2fms, eval=%.2fms, tokens=%s)",
+                target_model,
+                chunks_count,
+                total_t,
+                meta.get("load_duration_ms") or 0.0,
+                meta.get("prompt_eval_duration_ms") or 0.0,
+                meta.get("eval_duration_ms") or 0.0,
+                meta.get("eval_count") or chunks_count,
+            )
 
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.NetworkError) as err:
             msg = f"Failed to connect to Ollama during streaming at {self.base_url}: {err}"

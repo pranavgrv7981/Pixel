@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
     # Model / Ollama Settings
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API base URL")
-    default_model: str = Field(default="qwen3:30b", description="Default model name for Ollama")
+    default_model: str = Field(default="qwen3:4b", description="Default model name for Ollama")
     ollama_timeout_seconds: float = Field(default=300.0, description="Ollama request timeout in seconds")
     ollama_connect_timeout_seconds: float = Field(default=10.0, description="Ollama TCP connect timeout in seconds")
     ollama_stall_timeout_seconds: float = Field(default=180.0, description="Timeout for idle stream without new tokens")

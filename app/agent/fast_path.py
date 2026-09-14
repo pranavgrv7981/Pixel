@@ -214,22 +214,33 @@ class FastPathEngine:
             return None
 
         app_target = match.group(1).strip().lower()
-        if not app_target or app_target in ("file", "files", "folder", "terminal", "url", "browser", "website"):
+        if not app_target or app_target in ("file", "files", "folder", "terminal", "url", "browser", "website", "script", "test", "python"):
             return None
 
-        if self.registry:
-            tool_name = "open_application" if self.registry.has("open_application") else ("launch_application" if self.registry.has("launch_application") else None)
-            if tool_name:
-                tool = self.registry.get(tool_name)
+        if self.registry and (self.registry.has("open_application") or self.registry.has("launch_application")):
+            tool_name = "open_application" if self.registry.has("open_application") else "launch_application"
+            tool = self.registry.get(tool_name)
+            try:
+                args = {"app_name": app_target}
+                res: ToolResult = tool.execute(args)
+                if res.success:
+                    return f"Successfully opened {app_target}."
+                else:
+                    return f"Could not launch '{app_target}': {res.error or res.message or 'Application not found in whitelist.'}"
+            except Exception as err:
+                logger.debug("FastPath app launch failed: %s", err)
+        else:
+            known_apps = {"notepad", "calculator", "calc", "vscode", "code", "chrome", "edge", "paint", "mspaint", "explorer"}
+            if app_target in known_apps:
+                from app.tools.applications import OpenApplicationTool
+                tool = OpenApplicationTool()
                 try:
-                    args = {"target": app_target} if tool_name == "open_application" else {"app_name": app_target}
+                    args = {"app_name": app_target}
                     res: ToolResult = tool.execute(args)
                     if res.success:
                         return f"Successfully opened {app_target}."
-                    else:
-                        return f"Could not launch '{app_target}': {res.error or res.message or 'Application not found in whitelist.'}"
                 except Exception as err:
-                    logger.warning("FastPath app launch error: %s", err)
+                    logger.debug("FastPath fallback app launch error: %s", err)
 
         return None
 

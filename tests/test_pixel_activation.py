@@ -92,7 +92,7 @@ def test_hotkey_string_parsing():
 def test_hotkey_manager_lifecycle():
     """Verify start, stop, and clean unregistration of GlobalHotkeyManager."""
     triggered = []
-    mgr = GlobalHotkeyManager(hotkey_str="Alt+P", on_trigger=lambda: triggered.append(True))
+    mgr = GlobalHotkeyManager(hotkey_str="Ctrl+Shift+F11", on_trigger=lambda: triggered.append(True))
     res = mgr.start()
     assert res is True
     assert mgr.is_registered is True

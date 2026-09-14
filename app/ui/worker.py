@@ -92,13 +92,19 @@ class AgentWorker(QThread):
 
             # Determine routing decision model info if available
             decision = getattr(self.agent, "last_routing_decision", None)
-            model_name = getattr(decision, "selected_model", self.model or getattr(self.agent.client, "default_model", "qwen3:30b"))
-            role_val = getattr(getattr(decision, "role", None), "value", "standard")
+            meta = getattr(getattr(self.agent, "client", None), "last_turn_metadata", None) or {}
+            model_name = getattr(decision, "selected_model", self.model or getattr(self.agent.client, "default_model", "qwen3:4b"))
+            role_val = getattr(getattr(decision, "role", None), "value", "fast")
             is_fb = getattr(decision, "is_fallback", False)
 
             # Determine execution tier
-            is_fastpath = getattr(getattr(self.agent, "last_intent", None), "action_type", None) == "fast_path" or chunks_count <= 1 and total_duration < 0.05
-            tier_label = "DIRECT" if is_fastpath else (role_val.upper() if role_val else "FAST_MODEL")
+            is_fastpath = model_name == "pixel-fast-path" or (role_val == "fast" and chunks_count <= 1 and total_duration < 0.05)
+            tier_label = "DIRECT" if is_fastpath else (role_val.upper() if role_val == "fast" else ("HEAVY" if role_val == "heavy" else "STANDARD"))
+            if role_val == "fast" and not is_fastpath:
+                tier_label = "FAST_MODEL"
+
+            inp_tok = meta.get("prompt_eval_count") or max(1, len(self.prompt) // 4)
+            out_tok = meta.get("eval_count") or max(1, len(full_text) // 4)
 
             metrics = TurnMetrics(
                 ttft=ttft,
@@ -113,8 +119,11 @@ class AgentWorker(QThread):
                 ttft_ms=ttft * 1000 if ttft is not None else None,
                 t_generation_ms=gen_duration * 1000,
                 t_total_ms=total_duration * 1000,
-                input_tokens=max(1, len(self.prompt) // 4),
-                output_tokens=max(1, len(full_text) // 4),
+                t_load_ms=meta.get("load_duration_ms"),
+                t_prompt_eval_ms=meta.get("prompt_eval_duration_ms"),
+                t_eval_ms=meta.get("eval_duration_ms"),
+                input_tokens=inp_tok,
+                output_tokens=out_tok,
             )
 
             self.metrics_ready.emit(metrics)

@@ -78,5 +78,19 @@ class FastChatProfile(BaseModel):
             "num_ctx": self.num_ctx,
             "num_predict": self.num_predict,
             "temperature": self.temperature,
+            "keep_alive": self.keep_alive,
+        }
+
+    def to_chat_kwargs(self) -> dict[str, Any]:
+        """Return kwargs ready to pass into OllamaClient.stream_chat or chat."""
+        return {
+            "model": self.model,
+            "think": self.think,
+            "keep_alive": self.keep_alive,
+            "options": {
+                "num_ctx": self.num_ctx,
+                "num_predict": self.num_predict,
+                "temperature": self.temperature,
+            },
         }
 

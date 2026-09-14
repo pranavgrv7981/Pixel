@@ -531,7 +531,12 @@ class MainWindow(QMainWindow):
 
         if not full_response or not full_response.strip():
             if self.chat_view._current_assistant_bubble and not self.chat_view._current_assistant_bubble.get_content().strip():
-                self.chat_view._current_assistant_bubble.set_content("*(No response produced)*")
+                diag = getattr(self.chat_view, "_latest_metrics", None)
+                model_info = getattr(diag, "model_name", "local model")
+                tier_info = getattr(diag, "tier", "FAST_MODEL")
+                self.chat_view._current_assistant_bubble.set_content(
+                    f"*(No response returned by {model_info} [{tier_info}]. Verify that Ollama is active.)*"
+                )
 
         if self.tts_controller and full_response and full_response.strip():
             self.tts_controller.handle_turn_completed(full_response)

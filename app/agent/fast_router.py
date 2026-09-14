@@ -85,7 +85,8 @@ class FastRouter:
         app_match = re.match(r"^(?:open|launch|start|run)\s+([a-zA-Z0-9_\-\. ]+)$", text.strip(), re.IGNORECASE)
         if app_match:
             target_app = app_match.group(1).strip().lower()
-            if target_app and target_app not in ("file", "files", "folder", "terminal", "url", "browser", "website", "project"):
+            known_apps = {"notepad", "calculator", "calc", "vscode", "code", "chrome", "edge", "paint", "mspaint", "explorer"}
+            if target_app in known_apps:
                 return FastRouteDecision(
                     intent="app_launch",
                     confidence=0.95,
@@ -162,7 +163,7 @@ class FastRouter:
         requires_memory = bool(re.search(r"\b(remember|preference|profile|recall|favorite)\b", lower))
         is_complex = bool(re.search(r"\b(plan|workflow|architect|refactor|debug|analyze deep)\b", lower))
 
-        tier = "HEAVY" if is_complex else ("STANDARD" if (requires_tools or requires_rag) else "FAST_MODEL")
+        tier = "HEAVY" if is_complex else "STANDARD"
 
         return FastRouteDecision(
             intent="general_request",

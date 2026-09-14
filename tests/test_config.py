@@ -18,7 +18,7 @@ def test_default_settings() -> None:
     assert settings.log_to_file is True
     assert settings.log_to_console is True
     assert settings.ollama_base_url == "http://localhost:11434"
-    assert settings.default_model in ("qwen3:30b", "llama3")
+    assert settings.default_model in ("qwen3:4b", "qwen3:30b", "llama3")
 
 
 def test_log_level_case_insensitivity() -> None:

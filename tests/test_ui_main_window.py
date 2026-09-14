@@ -130,5 +130,5 @@ def test_main_window_clean_shutdown(window: MainWindow) -> None:
 def test_turn_completed_empty_response_handling(window: MainWindow) -> None:
     asst_bubble = window.chat_view.start_assistant_message()
     window._on_turn_completed("")
-    assert "No response produced" in asst_bubble.get_content()
+    assert "No response" in asst_bubble.get_content()
 

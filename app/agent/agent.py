@@ -16,6 +16,7 @@ from app.agent.telemetry import AgentQualityTracker
 from app.agent.tool_selector import CapabilityToolSelector
 from app.agent.verifier import ActionVerifier
 from app.agent.fast_path import FastPathEngine
+from app.agent.fast_router import FastRouteDecision, FastRouter
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     InvalidMessageError,
@@ -25,6 +26,7 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.core.ollama_client import ModelResponse, OllamaClient
 from app.models.profiles import FastChatProfile, ModelRole
+from app.models.router import RoutingDecision
 from app.models.selector import RequestCategory
 from app.security.manager import PermissionManager
 from app.security.permissions import ExecutionContext
@@ -188,12 +190,23 @@ class Agent:
         self.recovery_manager.clear_history()
         self.conversation.add_user_message(prompt)
 
-        # 0. FAST PATH: Deterministic Execution Bypass
-        if not images and self.fast_path and getattr(self.settings, "enable_fast_path", True):
+        # 0. FAST ROUTER: Direct Deterministic Bypass or Fast Chat Route
+        fast_decision = FastRouter.route(prompt)
+        logger.debug("FastRouter evaluated: intent='%s', confidence=%.2f, tier='%s', is_det=%s",
+                     fast_decision.intent, fast_decision.confidence, fast_decision.suggested_tier, fast_decision.is_deterministic)
+
+        # 0a. Deterministic bypass (Time, Date, Math, App launch, System status, Memory store/recall)
+        if not images and fast_decision.is_deterministic and getattr(self.settings, "enable_fast_path", True):
             fast_res = self.fast_path.try_execute(prompt)
             if fast_res is not None:
                 self.conversation.add_assistant_message(fast_res)
                 latency = time.perf_counter() - start_time
+                self.last_routing_decision = RoutingDecision(
+                    selected_model="pixel-fast-path",
+                    role=ModelRole.FAST,
+                    category=RequestCategory.DIRECT_TOOL,
+                    reason=f"Deterministic FastPath bypass ({fast_decision.intent})",
+                )
                 self.telemetry.record(
                     AgentTelemetryRecord(
                         interaction_id=interaction_id,
@@ -210,6 +223,62 @@ class Agent:
                 )
                 logger.info("FastPath executed for prompt '%s' in %.2fms", prompt[:40], latency * 1000)
                 return fast_res
+
+        # 0b. Fast Conversational Chat Bypass (Trivial greetings, small-talk)
+        # Skip memory lookup, RAG, tool schemas, and heavy context assembly
+        if not images and fast_decision.intent == "casual_chat" and not model:
+            target_model = self.settings.fast_model
+            self.last_routing_decision = RoutingDecision(
+                selected_model=target_model,
+                role=ModelRole.FAST,
+                category=RequestCategory.SIMPLE_CHAT,
+                reason="FastRouter selected FAST_MODEL for casual conversation.",
+            )
+            if hasattr(self, "client") and hasattr(self.client, "model_exists"):
+                if not self.client.model_exists(target_model):
+                    if not self.client.model_exists("pixel:fast") and not self.client.model_exists("qwen3:4b"):
+                        err_msg = f"Fast model '{target_model}' is not available on Ollama server. Please install it using 'ollama pull {target_model}'."
+                        logger.error(err_msg)
+                        self.conversation.add_assistant_message(err_msg)
+                        return err_msg
+
+            fast_profile = FastChatProfile(
+                model=target_model,
+                think=getattr(self.settings, "fast_chat_think", False),
+                num_ctx=getattr(self.settings, "fast_num_ctx", 2048),
+                num_predict=getattr(self.settings, "fast_num_predict", 384),
+                temperature=getattr(self.settings, "fast_temperature", 0.4),
+                keep_alive=getattr(self.settings, "fast_keep_alive", "30m"),
+            )
+            payload = self.conversation.get_messages_for_llm()
+            resp_obj = self.client.chat(
+                payload,
+                model=target_model,
+                options=fast_profile.to_ollama_options(),
+                think=fast_profile.think,
+                keep_alive=fast_profile.keep_alive,
+            )
+            if not getattr(resp_obj, "has_tool_calls", False):
+                content = str(resp_obj)
+                eval_res = self.quality_evaluator.evaluate(response_text=content, tool_executions=[], goal=prompt)
+                final_content = eval_res.sanitized_content or content
+                self.conversation.add_assistant_message(final_content)
+                latency = time.perf_counter() - start_time
+                self.telemetry.record(
+                    AgentTelemetryRecord(
+                        interaction_id=interaction_id,
+                        intent_category="casual_chat",
+                        action_type="chat",
+                        model_name=target_model,
+                        tool_count=0,
+                        retries_count=0,
+                        success=True,
+                        goal_achieved=True,
+                        latency_seconds=latency,
+                        false_completion_prevented=False,
+                    )
+                )
+                return final_content
 
         # 1. UNDERSTAND & CLASSIFY INTENT
         intent = self.intent_analyzer.analyze(prompt)
@@ -447,12 +516,23 @@ class Agent:
         self.recovery_manager.clear_history()
         self.conversation.add_user_message(prompt)
 
-        # 0. FAST PATH: Deterministic Execution Bypass
-        if not images and self.fast_path and getattr(self.settings, "enable_fast_path", True):
+        # 0. FAST ROUTER: Direct Deterministic Bypass or Fast Chat Route
+        fast_decision = FastRouter.route(prompt)
+        logger.debug("FastRouter evaluated in stream_run: intent='%s', confidence=%.2f, tier='%s', is_det=%s",
+                     fast_decision.intent, fast_decision.confidence, fast_decision.suggested_tier, fast_decision.is_deterministic)
+
+        # 0a. Deterministic bypass (Time, Date, Math, App launch, System status, Memory store/recall)
+        if not images and fast_decision.is_deterministic and getattr(self.settings, "enable_fast_path", True):
             fast_res = self.fast_path.try_execute(prompt)
             if fast_res is not None:
                 self.conversation.add_assistant_message(fast_res)
                 latency = time.perf_counter() - start_time
+                self.last_routing_decision = RoutingDecision(
+                    selected_model="pixel-fast-path",
+                    role=ModelRole.FAST,
+                    category=RequestCategory.DIRECT_TOOL,
+                    reason=f"Deterministic FastPath bypass ({fast_decision.intent})",
+                )
                 self.telemetry.record(
                     AgentTelemetryRecord(
                         interaction_id=interaction_id,
@@ -470,6 +550,88 @@ class Agent:
                 logger.info("FastPath executed for prompt '%s' in %.2fms", prompt[:40], latency * 1000)
                 yield fast_res
                 return
+
+        # 0b. Fast Conversational Chat Bypass (Trivial greetings, small-talk)
+        # Skip memory lookup, RAG, tool schemas, and heavy context assembly
+        if not images and fast_decision.intent == "casual_chat" and not model:
+            target_model = self.settings.fast_model
+            self.last_routing_decision = RoutingDecision(
+                selected_model=target_model,
+                role=ModelRole.FAST,
+                category=RequestCategory.SIMPLE_CHAT,
+                reason="FastRouter selected FAST_MODEL for casual conversation.",
+            )
+            if hasattr(self, "client") and hasattr(self.client, "model_exists"):
+                if not self.client.model_exists(target_model):
+                    if not self.client.model_exists("pixel:fast") and not self.client.model_exists("qwen3:4b"):
+                        err_msg = f"Fast model '{target_model}' is not available on Ollama server. Please install it using 'ollama pull {target_model}'."
+                        logger.error(err_msg)
+                        self.conversation.add_assistant_message(err_msg)
+                        yield err_msg
+                        return
+
+            fast_profile = FastChatProfile(
+                model=target_model,
+                think=getattr(self.settings, "fast_chat_think", False),
+                num_ctx=getattr(self.settings, "fast_num_ctx", 2048),
+                num_predict=getattr(self.settings, "fast_num_predict", 384),
+                temperature=getattr(self.settings, "fast_temperature", 0.4),
+                keep_alive=getattr(self.settings, "fast_keep_alive", "30m"),
+            )
+            payload = self.conversation.get_messages_for_llm()
+            accumulated_tokens: list[str] = []
+            try:
+                for token in self.client.stream_chat(
+                    payload,
+                    model=target_model,
+                    options=fast_profile.to_ollama_options(),
+                    think=fast_profile.think,
+                    keep_alive=fast_profile.keep_alive,
+                ):
+                    accumulated_tokens.append(str(token))
+                    yield str(token)
+            except Exception as stream_err:
+                logger.warning("Streaming fast chat error: %s; trying fallback chat()", stream_err)
+
+            if not accumulated_tokens:
+                try:
+                    resp_obj = self.client.chat(
+                        payload,
+                        model=target_model,
+                        options=fast_profile.to_ollama_options(),
+                        think=fast_profile.think,
+                        keep_alive=fast_profile.keep_alive,
+                    )
+                    resp_str = str(resp_obj)
+                    if resp_str:
+                        accumulated_tokens.append(resp_str)
+                        yield resp_str
+                except Exception as chat_err:
+                    logger.error("Fallback chat() failed: %s", chat_err)
+                    err_notice = f"I was unable to complete the request: {chat_err}"
+                    accumulated_tokens.append(err_notice)
+                    yield err_notice
+
+            content = "".join(accumulated_tokens)
+            eval_res = self.quality_evaluator.evaluate(response_text=content, tool_executions=[], goal=prompt)
+            final_content = eval_res.sanitized_content or content
+            self.conversation.add_assistant_message(final_content)
+            latency = time.perf_counter() - start_time
+            self.telemetry.record(
+                AgentTelemetryRecord(
+                    interaction_id=interaction_id,
+                    intent_category="casual_chat",
+                    action_type="chat",
+                    model_name=target_model,
+                    tool_count=0,
+                    retries_count=0,
+                    success=True,
+                    goal_achieved=True,
+                    latency_seconds=latency,
+                    false_completion_prevented=False,
+                )
+            )
+            return
 
         # 1. UNDERSTAND & CLASSIFY INTENT
         intent = self.intent_analyzer.analyze(prompt)
